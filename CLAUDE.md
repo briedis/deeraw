@@ -117,7 +117,15 @@ Keep this list up to date as features are built.
 
 ## Current state
 
-- All code in `src/main.rs`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
+- Code layout (`src/`): `main.rs` (window setup, `mod`s), `object.rs` (`Object`, `Kind`, `TextFrame`),
+  `style.rs` (`Style`, palette/sizes, `Background`), `history.rs` (undo), `geometry.rs` (resize/crop/zoom math),
+  `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `export.rs`
+  (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
+  its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
+  text editing), `app/selection.rs` (handles, crop), `app/panels.rs` (layers, toolbar, style panel, corner
+  controls), `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
+  Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
+  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   resize math (`resize_to`).
