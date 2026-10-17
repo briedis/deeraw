@@ -27,6 +27,8 @@ const MIN_ZOOM_LEVEL: i32 = -4;
 const MAX_ZOOM_LEVEL: i32 = 20;
 /// Mouse wheel distance (in points) that counts as one zoom step, for smooth-scrolling devices.
 const WHEEL_POINTS_PER_STEP: f32 = 50.0;
+/// How many undo steps are kept.
+const MAX_UNDO: usize = 200;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
 
@@ -59,6 +61,7 @@ enum Tool {
 
 /// An object on the canvas. `rect` is in canvas pixels (physical pixels
 /// relative to the canvas origin), so a fresh image paste shows 1:1.
+#[derive(Clone, PartialEq)]
 struct Object {
     id: u64,
     rect: Rect,
@@ -67,6 +70,7 @@ struct Object {
     kind: Kind,
 }
 
+#[derive(Clone, PartialEq)]
 enum Kind {
     Image { texture: TextureHandle },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
@@ -114,10 +118,50 @@ enum Drawing {
     Arrow(Pos2, Pos2),
 }
 
+/// Undo/redo by snapshots of the object list. Whenever the canvas settles (no mouse button
+/// held, nothing being drawn or typed) and differs from `saved`, `saved` goes on the undo
+/// stack, so every action becomes one step without per-action bookkeeping.
+#[derive(Default)]
+struct History {
+    undo: Vec<Vec<Object>>,
+    redo: Vec<Vec<Object>>,
+    /// The state as of the last recorded step.
+    saved: Vec<Object>,
+}
+
+impl History {
+    fn record(&mut self, objects: &[Object]) {
+        if self.saved != objects {
+            self.undo.push(std::mem::replace(&mut self.saved, objects.to_vec()));
+            if self.undo.len() > MAX_UNDO {
+                self.undo.remove(0);
+            }
+            self.redo.clear();
+        }
+    }
+
+    /// Steps `objects` back (from `from` to `to`), saving the current state on the other stack.
+    fn step(from: &mut Vec<Vec<Object>>, to: &mut Vec<Vec<Object>>, saved: &mut Vec<Object>, objects: &mut Vec<Object>) {
+        if let Some(state) = from.pop() {
+            to.push(std::mem::replace(objects, state));
+            *saved = objects.clone();
+        }
+    }
+
+    fn undo(&mut self, objects: &mut Vec<Object>) {
+        Self::step(&mut self.undo, &mut self.redo, &mut self.saved, objects);
+    }
+
+    fn redo(&mut self, objects: &mut Vec<Object>) {
+        Self::step(&mut self.redo, &mut self.undo, &mut self.saved, objects);
+    }
+}
+
 #[derive(Default)]
 struct DeerawApp {
     /// Bottom to top: later objects are drawn on top.
     objects: Vec<Object>,
+    history: History,
     selected: Option<u64>,
     next_id: u64,
     tool: Tool,
@@ -231,6 +275,17 @@ impl DeerawApp {
                             self.objects.retain(|obj| obj.id != id);
                         }
                     }
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.command => {
+                        match key {
+                            egui::Key::Z if modifiers.shift => self.history.redo(&mut self.objects),
+                            egui::Key::Z => self.history.undo(&mut self.objects),
+                            egui::Key::Y => self.history.redo(&mut self.objects),
+                            _ => {}
+                        }
+                        if self.selected.is_some_and(|id| !self.objects.iter().any(|o| o.id == id)) {
+                            self.selected = None;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -247,9 +302,10 @@ impl DeerawApp {
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
             if let Kind::Text { text, font_px } = &obj.kind {
-                // Keep the rect in sync with the text layout.
-                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), INK);
-                obj.rect = Rect::from_min_size(obj.rect.min, (galley.size() / scale).max(Vec2::splat(MIN_SIZE)));
+                // Keep the rect in sync with the text layout. Measured at a fixed scale (1 point
+                // per canvas pixel) so zooming doesn't change it.
+                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(*font_px), INK);
+                obj.rect = Rect::from_min_size(obj.rect.min, galley.size().max(Vec2::splat(MIN_SIZE)));
             }
             if let Kind::Arrow { start, end } = obj.kind {
                 obj.rect = Rect::from_two_pos(start, end);
@@ -310,6 +366,13 @@ impl DeerawApp {
         // Set last so it wins over hover cursors of whatever is under the pointer.
         if self.panning {
             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+        }
+
+        let settled = !ui.input(|i| i.pointer.any_down())
+            && self.editing.is_none()
+            && self.drawing.is_none();
+        if settled {
+            self.history.record(&self.objects);
         }
     }
 
@@ -854,6 +917,39 @@ mod tests {
         let canvas_point = (anchor - pan) / 1.0;
         assert_eq!(new_pan + canvas_point * 1.5, anchor);
         assert_eq!(pan_for_zoom(pan, anchor, 1.0, 1.0), pan);
+    }
+
+    fn arrow(id: u64) -> Object {
+        let (start, end) = (Pos2::ZERO, Pos2::new(10.0, 0.0));
+        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end } }
+    }
+
+    #[test]
+    fn undo_redo() {
+        let mut history = History::default();
+        let mut objects = vec![];
+        history.record(&objects);
+        objects.push(arrow(1));
+        history.record(&objects);
+        objects.push(arrow(2));
+        history.record(&objects);
+        history.record(&objects); // unchanged: no new step
+
+        let ids = |objects: &[Object]| objects.iter().map(|o| o.id).collect::<Vec<_>>();
+        history.undo(&mut objects);
+        assert_eq!(ids(&objects), [1]);
+        history.undo(&mut objects);
+        assert_eq!(ids(&objects), []);
+        history.undo(&mut objects); // nothing left
+        assert_eq!(ids(&objects), []);
+        history.redo(&mut objects);
+        assert_eq!(ids(&objects), [1]);
+
+        // A new change after undo drops the redo stack.
+        objects.push(arrow(3));
+        history.record(&objects);
+        history.redo(&mut objects);
+        assert_eq!(ids(&objects), [1, 3]);
     }
 
     #[test]

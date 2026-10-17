@@ -51,6 +51,9 @@ Keep this list up to date as features are built.
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
    Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%. Copy captures at the
    current zoom.
+6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
+   change to objects: paste, draw, text, move, resize, arrow points, delete. Not in history:
+   selection, tool, pan/zoom.
 
 ## Current state
 
@@ -66,6 +69,11 @@ Keep this list up to date as features are built.
   are normalized (0..1) to `rect`, so move/resize only change `rect`. Arrow endpoints are stored
   in canvas pixels and `rect` is re-derived from them each frame; use `Object::translate` to move. Text `rect`
   is re-synced to the text layout every frame; resizing text scales `font_px`.
+- Undo is snapshot-based (`History`): whenever the canvas is settled (no button held, not
+  drawing or editing text) and `objects` differs from the last snapshot, a step is recorded.
+  New features get undo for free as long as all their state lives in `objects`. Anything that
+  feeds into `Object` equality must be stable across frames (e.g. text rects are measured at a
+  fixed scale, not the current zoom), or spurious steps get recorded.
 - Copy uses `ctx.request_screenshot` (arrives a frame later) rather than CPU rendering.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
