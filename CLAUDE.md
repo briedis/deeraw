@@ -37,7 +37,11 @@ Keep this list up to date as features are built.
    undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
    vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
-   Min size 4px. Delete removes the selected object. Hit-testing uses the bounding box, except
+   Min size 4px. Delete removes the selected object(s).
+   **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
+   dragging on empty canvas draws a selection box that selects objects entirely inside it
+   (Ctrl adds to the selection). Dragging any selected object moves them all. With several
+   selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
 4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
@@ -64,8 +68,9 @@ Keep this list up to date as features are built.
    either expands its options upwards (picking one collapses it again). Colors: black, white,
    red, orange, green, blue. Size: line width (2/3/6/10px, for pencil and arrows) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px).
-   With a drawing tool it sets the style of new objects; with a selection it restyles that object
-   (undoable) and also becomes the default. Arrow heads grow with the line width.
+   With a drawing tool it sets the style of new objects; with a selection it restyles every
+   selected object that has that setting (undoable) and also becomes the default. A mixed
+   selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width.
 
 ## Current state
 

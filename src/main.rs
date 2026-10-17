@@ -96,7 +96,7 @@ enum Kind {
 #[derive(Clone, Copy, PartialEq)]
 enum StyleSection {
     Color,
-    Size,
+    Size(SizeKind),
 }
 
 /// Which size the style panel edits.
@@ -120,6 +120,15 @@ impl Default for Style {
     }
 }
 
+impl Style {
+    fn size_mut(&mut self, kind: SizeKind) -> &mut f32 {
+        match kind {
+            SizeKind::Line => &mut self.line_width,
+            SizeKind::Font => &mut self.font_px,
+        }
+    }
+}
+
 impl Object {
     fn translate(&mut self, delta: Vec2) {
         self.rect = self.rect.translate(delta);
@@ -129,35 +138,20 @@ impl Object {
         }
     }
 
-    /// What the style panel edits for this object; `None` for images.
-    fn size_kind(&self) -> Option<SizeKind> {
-        match self.kind {
-            Kind::Image { .. } => None,
-            Kind::Stroke { .. } | Kind::Arrow { .. } => Some(SizeKind::Line),
-            Kind::Text { .. } => Some(SizeKind::Font),
-        }
-    }
-
-    /// Color and size (line width or font size); `None` for images.
-    fn style(&self) -> Option<(Color32, f32)> {
-        match &self.kind {
-            Kind::Image { .. } => None,
-            Kind::Stroke { color, width, .. } | Kind::Arrow { color, width, .. } => Some((*color, *width)),
-            Kind::Text { color, font_px, .. } => Some((*color, *font_px)),
-        }
-    }
-
-    fn set_style(&mut self, new_color: Color32, size: f32) {
+    /// `None` for images, which have no color.
+    fn color_mut(&mut self) -> Option<&mut Color32> {
         match &mut self.kind {
-            Kind::Image { .. } => {}
-            Kind::Stroke { color, width, .. } | Kind::Arrow { color, width, .. } => {
-                *color = new_color;
-                *width = size;
-            }
-            Kind::Text { color, font_px, .. } => {
-                *color = new_color;
-                *font_px = size;
-            }
+            Kind::Image { .. } => None,
+            Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Text { color, .. } => Some(color),
+        }
+    }
+
+    /// Line width or font size, whichever the object has; `None` for images.
+    fn size_mut(&mut self) -> Option<(SizeKind, &mut f32)> {
+        match &mut self.kind {
+            Kind::Image { .. } => None,
+            Kind::Stroke { width, .. } | Kind::Arrow { width, .. } => Some((SizeKind::Line, width)),
+            Kind::Text { font_px, .. } => Some((SizeKind::Font, font_px)),
         }
     }
 
@@ -253,7 +247,10 @@ struct DeerawApp {
     /// Bottom to top: later objects are drawn on top.
     objects: Vec<Object>,
     history: History,
-    selected: Option<u64>,
+    /// Selected object ids, in the order they were selected.
+    selected: Vec<u64>,
+    /// Selection box being dragged with the Select tool: start and current corner, canvas pixels.
+    marquee: Option<(Pos2, Pos2)>,
     next_id: u64,
     tool: Tool,
     drawing: Option<Drawing>,
@@ -311,12 +308,14 @@ impl DeerawApp {
         if self.objects.is_empty() {
             ui.weak("Paste an image with Ctrl+V,\nor draw with the tools below");
         }
+        let mut clicked = None;
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Topmost first, like most layer panels.
             for obj in self.objects.iter().rev() {
-                let selected = self.selected == Some(obj.id);
-                if ui.selectable_label(selected, obj.name()).clicked() {
-                    self.selected = Some(obj.id);
+                let selected = self.selected.contains(&obj.id);
+                let response = ui.selectable_label(selected, obj.name());
+                if response.clicked() {
+                    clicked = Some(obj.id);
                 }
                 let r = obj.rect;
                 let mut info = format!(
@@ -340,6 +339,10 @@ impl DeerawApp {
                 ui.weak(info);
             }
         });
+        if let Some(id) = clicked {
+            let ctrl = ui.input(|i| i.modifiers.command);
+            self.click_select(id, ctrl);
+        }
     }
 
     fn zoom(&self) -> f32 {
@@ -378,9 +381,8 @@ impl DeerawApp {
                         }
                     }
                     egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
-                        if let Some(id) = self.selected.take() {
-                            self.objects.retain(|obj| obj.id != id);
-                        }
+                        let selected = std::mem::take(&mut self.selected);
+                        self.objects.retain(|obj| !selected.contains(&obj.id));
                     }
                     egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.command => {
                         match key {
@@ -389,9 +391,8 @@ impl DeerawApp {
                             egui::Key::Y => self.history.redo(&mut self.objects),
                             _ => {}
                         }
-                        if self.selected.is_some_and(|id| !self.objects.iter().any(|o| o.id == id)) {
-                            self.selected = None;
-                        }
+                        let objects = &self.objects;
+                        self.selected.retain(|id| objects.iter().any(|o| o.id == *id));
                     }
                     _ => {}
                 }
@@ -409,6 +410,10 @@ impl DeerawApp {
             paint_checkerboard(&painter, canvas_rect, 8.0, 242);
         }
         let selecting = self.tool == Tool::Select;
+        let ctrl = ui.input(|i| i.modifiers.command);
+        // Dragging any selected object moves all of them; applied after the loop.
+        let mut move_by = Vec2::ZERO;
+        let mut clicked = None;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
             if let Kind::Text { text, font_px, color } = &obj.kind {
@@ -435,23 +440,46 @@ impl DeerawApp {
             };
             if selecting && !editing && hit {
                 let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, Sense::click_and_drag());
-                if response.clicked() || response.drag_started_by(PointerButton::Primary) {
-                    self.selected = Some(obj.id);
+                if response.clicked() {
+                    clicked = Some(obj.id);
+                }
+                // Starting to drag an unselected object selects it (adds it with Ctrl), so the
+                // drag moves it; dragging a selected one keeps the whole selection.
+                if response.drag_started_by(PointerButton::Primary) && !self.selected.contains(&obj.id) {
+                    if !ctrl {
+                        self.selected.clear();
+                    }
+                    self.selected.push(obj.id);
                 }
                 if response.double_clicked() && matches!(obj.kind, Kind::Text { .. }) {
                     self.editing = Some(obj.id);
                     self.focus_editor = true;
                 }
                 if response.dragged_by(PointerButton::Primary) {
-                    obj.translate(response.drag_delta() / scale);
+                    move_by = response.drag_delta() / scale;
                 }
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
-            if !editing {
-                paint_object(&painter, obj, rect, to_screen_pos, scale);
+        }
+        if let Some(id) = clicked {
+            self.click_select(id, ctrl);
+        }
+        if move_by != Vec2::ZERO {
+            for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
+                obj.translate(move_by);
             }
+        }
+        for obj in &self.objects {
+            if self.editing != Some(obj.id) {
+                paint_object(&painter, obj, to_screen(obj.rect), to_screen_pos, scale);
+            }
+        }
+        if let Some((a, b)) = self.marquee {
+            let rect = Rect::from_two_pos(to_screen_pos(a), to_screen_pos(b));
+            painter.rect_filled(rect, 0.0, SELECTION_COLOR.gamma_multiply(0.1));
+            painter.rect_stroke(rect, 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
         }
 
         match &self.drawing {
@@ -587,25 +615,50 @@ impl DeerawApp {
     }
 
     /// Just above the toolbar: the current color and line width / font size. Clicking either
-    /// expands its options upwards. Shown for the drawing tools (sets the style of new objects)
-    /// and for a selected stroke, arrow or text (restyles it).
+    /// expands its options upwards. With a drawing tool it sets the style of new objects; with
+    /// the Select tool it restyles the selected objects, each setting only those that have it
+    /// (a mix of strokes and text shows both a line width and a font size).
     fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
-        let selected = self.objects.iter().position(|o| self.tool == Tool::Select && Some(o.id) == self.selected);
-        let size_kind = match self.tool {
-            Tool::Pencil | Tool::Arrow | Tool::Line => Some(SizeKind::Line),
-            Tool::Text => Some(SizeKind::Font),
-            Tool::Select => selected.and_then(|i| self.objects[i].size_kind()),
+        let targets: Vec<usize> = match self.tool {
+            Tool::Select => (0..self.objects.len()).filter(|&i| self.selected.contains(&self.objects[i].id)).collect(),
+            _ => vec![],
         };
-        let Some(size_kind) = size_kind else {
+        let (show_color, size_kinds) = match self.tool {
+            Tool::Pencil | Tool::Arrow | Tool::Line => (true, vec![SizeKind::Line]),
+            Tool::Text => (true, vec![SizeKind::Font]),
+            Tool::Select => {
+                let kinds: Vec<SizeKind> = targets.iter().filter_map(|&i| self.objects[i].size_mut().map(|(k, _)| k)).collect();
+                let size_kinds = [SizeKind::Line, SizeKind::Font].into_iter().filter(|k| kinds.contains(k)).collect();
+                (!kinds.is_empty(), size_kinds)
+            }
+        };
+        if !show_color {
             self.style_open = None;
             return;
-        };
-        let (mut color, mut size) = selected.and_then(|i| self.objects[i].style()).unwrap_or(match size_kind {
-            SizeKind::Line => (self.style.color, self.style.line_width),
-            SizeKind::Font => (self.style.color, self.style.font_px),
-        });
+        }
+        // Current values: the first selected object that has the setting, else the defaults.
+        let color = targets
+            .iter()
+            .find_map(|&i| self.objects[i].color_mut().map(|c| *c))
+            .unwrap_or(self.style.color);
+        let sizes: Vec<(SizeKind, f32)> = size_kinds
+            .iter()
+            .map(|&kind| {
+                let size = targets.iter().find_map(|&i| match self.objects[i].size_mut() {
+                    Some((k, size)) if k == kind => Some(*size),
+                    _ => None,
+                });
+                (kind, size.unwrap_or(*self.style.size_mut(kind)))
+            })
+            .collect();
+        if let Some(StyleSection::Size(kind)) = self.style_open
+            && !size_kinds.contains(&kind)
+        {
+            self.style_open = None;
+        }
 
-        let mut changed = false;
+        let mut new_color = None;
+        let mut new_size = None;
         egui::Area::new(egui::Id::unique("style"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
@@ -618,20 +671,19 @@ impl DeerawApp {
                                 StyleSection::Color => {
                                     for (swatch, name) in PALETTE {
                                         if color_swatch(ui, color == swatch, name, Some(swatch)) {
-                                            color = swatch;
-                                            changed = true;
+                                            new_color = Some(swatch);
                                         }
                                     }
                                 }
-                                StyleSection::Size => {
-                                    let options = match size_kind {
+                                StyleSection::Size(kind) => {
+                                    let current = sizes.iter().find(|(k, _)| *k == kind).map(|(_, s)| *s);
+                                    let options = match kind {
                                         SizeKind::Line => LINE_WIDTHS,
                                         SizeKind::Font => FONT_SIZES,
                                     };
                                     for option in options {
-                                        if size_button(ui, size == option, size_kind, option) {
-                                            size = option;
-                                            changed = true;
+                                        if size_button(ui, current == Some(option), kind, option) {
+                                            new_size = Some((kind, option));
                                         }
                                     }
                                 }
@@ -641,30 +693,55 @@ impl DeerawApp {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
-                            let color_open = self.style_open == Some(StyleSection::Color);
-                            if color_swatch(ui, color_open, name, Some(color)) {
-                                self.style_open = (!color_open).then_some(StyleSection::Color);
-                            }
-                            let size_open = self.style_open == Some(StyleSection::Size);
-                            if size_button(ui, size_open, size_kind, size) {
-                                self.style_open = (!size_open).then_some(StyleSection::Size);
+                            self.style_toggle(StyleSection::Color, |open| color_swatch(ui, open, name, Some(color)));
+                            for &(kind, size) in &sizes {
+                                self.style_toggle(StyleSection::Size(kind), |open| size_button(ui, open, kind, size));
                             }
                         });
                     });
                 });
             });
 
-        if !changed {
+        if new_color.is_none() && new_size.is_none() {
             return;
         }
         self.style_open = None;
-        self.style.color = color;
-        match size_kind {
-            SizeKind::Line => self.style.line_width = size,
-            SizeKind::Font => self.style.font_px = size,
+        if let Some(color) = new_color {
+            self.style.color = color;
+            for &i in &targets {
+                if let Some(c) = self.objects[i].color_mut() {
+                    *c = color;
+                }
+            }
         }
-        if let Some(i) = selected {
-            self.objects[i].set_style(color, size);
+        if let Some((kind, size)) = new_size {
+            *self.style.size_mut(kind) = size;
+            for &i in &targets {
+                if let Some((k, s)) = self.objects[i].size_mut()
+                    && k == kind
+                {
+                    *s = size;
+                }
+            }
+        }
+    }
+
+    /// A style panel button that opens `section` (or closes it if open).
+    fn style_toggle(&mut self, section: StyleSection, button: impl FnOnce(bool) -> bool) {
+        let open = self.style_open == Some(section);
+        if button(open) {
+            self.style_open = (!open).then_some(section);
+        }
+    }
+
+    /// A click on an object (canvas or layers panel): selects only it, or with Ctrl toggles it.
+    fn click_select(&mut self, id: u64, ctrl: bool) {
+        if !ctrl {
+            self.selected = vec![id];
+        } else if let Some(i) = self.selected.iter().position(|s| *s == id) {
+            self.selected.remove(i);
+        } else {
+            self.selected.push(id);
         }
     }
 
@@ -694,8 +771,31 @@ impl DeerawApp {
         background.ctx.set_cursor_image(crosshair);
         match self.tool {
             Tool::Select => {
-                if background.clicked() {
-                    self.selected = None;
+                let ctrl = background.ctx.input(|i| i.modifiers.command);
+                if background.clicked() && !ctrl {
+                    self.selected.clear();
+                }
+                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
+                    self.marquee = Some((p, p));
+                }
+                if let (true, Some(p), Some((_, end))) =
+                    (background.dragged_by(PointerButton::Primary), pointer, &mut self.marquee)
+                {
+                    *end = p;
+                }
+                // Selects the objects entirely inside the box (adds them with Ctrl).
+                if background.drag_stopped()
+                    && let Some((a, b)) = self.marquee.take()
+                {
+                    let area = Rect::from_two_pos(a, b);
+                    if !ctrl {
+                        self.selected.clear();
+                    }
+                    for obj in &self.objects {
+                        if area.contains_rect(obj.rect) && !self.selected.contains(&obj.id) {
+                            self.selected.push(obj.id);
+                        }
+                    }
                 }
             }
             Tool::Pencil | Tool::Arrow | Tool::Line => {
@@ -760,7 +860,15 @@ impl DeerawApp {
         to_canvas: impl Fn(Pos2) -> Pos2,
         scale: f32,
     ) {
-        let Some(obj) = self.objects.iter_mut().find(|o| Some(o.id) == self.selected) else {
+        // Several selected: just outline each, no handles.
+        if self.selected.len() > 1 {
+            for obj in self.objects.iter().filter(|o| self.selected.contains(&o.id)) {
+                let rect = to_screen(obj.rect).expand(2.0);
+                ui.painter().rect_stroke(rect, 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Outside);
+            }
+            return;
+        }
+        let Some(obj) = self.objects.iter_mut().find(|o| self.selected.contains(&o.id)) else {
             return;
         };
         if self.editing == Some(obj.id) {
@@ -878,7 +986,7 @@ impl DeerawApp {
             if text.trim().is_empty() {
                 self.objects.retain(|o| o.id != id);
             } else {
-                self.selected = Some(id);
+                self.selected = vec![id];
             }
         }
     }
@@ -916,7 +1024,7 @@ impl DeerawApp {
         self.next_id += 1;
         let aspect = rect.aspect_ratio();
         self.objects.push(Object { id, rect, aspect, kind });
-        self.selected = Some(id);
+        self.selected = vec![id];
         id
     }
 
@@ -1196,6 +1304,19 @@ mod tests {
     fn arrow(id: u64) -> Object {
         let (start, end) = (Pos2::ZERO, Pos2::new(10.0, 0.0));
         Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0, head: true } }
+    }
+
+    #[test]
+    fn click_select_toggles_with_ctrl() {
+        let mut app = DeerawApp::default();
+        app.click_select(1, false);
+        app.click_select(2, true);
+        app.click_select(3, true);
+        assert_eq!(app.selected, [1, 2, 3]);
+        app.click_select(2, true);
+        assert_eq!(app.selected, [1, 3]);
+        app.click_select(3, false);
+        assert_eq!(app.selected, [3]);
     }
 
     #[test]
