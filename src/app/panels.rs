@@ -8,6 +8,10 @@ use crate::object::Kind;
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection};
 use crate::widgets::{align_button, align_name, color_swatch, pen_button, size_button};
 
+/// How long a notice shows, in seconds, including its fade-out.
+const NOTICE_SECONDS: f64 = 2.5;
+const NOTICE_FADE: f64 = 0.5;
+
 impl DeerawApp {
     pub(super) fn layers_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Layers");
@@ -67,6 +71,28 @@ impl DeerawApp {
             let ctrl = ui.input(|i| i.modifiers.command);
             self.click_select(id, ctrl);
         }
+    }
+
+    /// The current notice, next to where the pointer was (or at the canvas center), for
+    /// `NOTICE_SECONDS`, fading out at the end.
+    pub(super) fn notice(&mut self, ui: &egui::Ui, canvas_rect: Rect) {
+        let Some(notice) = &self.notice else { return };
+        let age = ui.input(|i| i.time) - notice.shown_at;
+        if age > NOTICE_SECONDS {
+            self.notice = None;
+            return;
+        }
+        let opacity = ((NOTICE_SECONDS - age) / NOTICE_FADE).min(1.0) as f32;
+        let pos = notice.pos.filter(|p| canvas_rect.contains(*p)).unwrap_or(canvas_rect.center());
+        egui::Area::new(egui::Id::unique("notice"))
+            .fixed_pos(pos + Vec2::new(16.0, 16.0))
+            .order(egui::Order::Tooltip)
+            .interactable(false)
+            .show(ui.ctx(), |ui| {
+                ui.set_opacity(opacity);
+                egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(&notice.text));
+            });
+        ui.ctx().request_repaint();
     }
 
     /// Bottom-right of the canvas: background picker and zoom level.

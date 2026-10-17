@@ -61,15 +61,31 @@ pub enum ExportTarget {
 
 /// Writes `image` (premultiplied, as egui keeps it) as an RGBA PNG.
 pub fn write_png(path: &Path, image: &ColorImage) -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
-    let mut encoder = png::Encoder::new(file, image.size[0] as u32, image.size[1] as u32);
+    std::fs::write(path, encode_png(image)?)?;
+    Ok(())
+}
+
+/// `image` (premultiplied, as egui keeps it) as RGBA PNG bytes.
+pub fn encode_png(image: &ColorImage) -> Result<Vec<u8>, png::EncodingError> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, image.size[0] as u32, image.size[1] as u32);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header()?;
     let data: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
     writer.write_image_data(&data)?;
     writer.finish()?;
-    Ok(())
+    Ok(bytes)
+}
+
+/// A byte count for people: "512 B", "245 KB", "1.2 MB".
+pub fn format_bytes(bytes: usize) -> String {
+    const KB: f64 = 1024.0;
+    match bytes as f64 {
+        b if b < KB => format!("{bytes} B"),
+        b if b < KB * KB => format!("{:.0} KB", b / KB),
+        b => format!("{:.1} MB", b / (KB * KB)),
+    }
 }
 
 /// Crops `image` to the pixels that aren't `background`; unchanged if there are none.
@@ -194,6 +210,13 @@ mod tests {
 
         let blank = ColorImage::new([2, 1], vec![o, o]);
         assert_eq!(trim(&blank, o).size, [2, 1]);
+    }
+
+    #[test]
+    fn byte_counts_read_well() {
+        assert_eq!(format_bytes(512), "512 B");
+        assert_eq!(format_bytes(250_000), "244 KB");
+        assert_eq!(format_bytes(1_300_000), "1.2 MB");
     }
 
     #[test]

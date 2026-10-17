@@ -33,6 +33,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    - Ctrl+C copies everything (not just what's visible) as a PNG cropped to the content's bounding
      box, trimmed to the pixels that differ from the background (no padding), at 1 canvas pixel per PNG pixel whatever the zoom (scaled down only past
      the GPU's max texture size). No selection or UI in it. Clipboard gets PNG + DIB formats.
+     A tooltip-style notice next to the pointer (canvas center if it's elsewhere) confirms it with the
+     image's resolution and PNG size (from our own encoding, `encode_png`; the clipboard encodes separately,
+     so it's approximate), for 2.5s with a fade (`notice`). Cut shows it too.
 2. **Layers panel** — hidden by default; Ctrl+L toggles it (works anywhere, even while typing). Resizable left panel listing every object, topmost first, with its
    position, size and kind-specific info (source size, point count, font size). Doubles as a
    debug view. Clicking a row selects it. Showing/hiding/resizing it doesn't move the drawing

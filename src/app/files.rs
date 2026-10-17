@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use eframe::egui::{self, ColorImage, Pos2, Rect, Vec2};
 
-use super::{DeerawApp, MIN_ZOOM_LEVEL, ZOOM_STEP};
-use crate::export::{Export, ExportStep, ExportTarget, bounds, export_shapes, render_offscreen, trim, write_png};
+use super::{DeerawApp, MIN_ZOOM_LEVEL, Notice, ZOOM_STEP};
+use crate::export::{Export, ExportStep, ExportTarget, bounds, encode_png, export_shapes, format_bytes, render_offscreen, trim, write_png};
 use crate::object::Kind;
 
 /// Room rendered around the objects' rects when exporting, in canvas pixels, so line widths and
@@ -162,7 +162,15 @@ impl DeerawApp {
         // The corner is in the margin, so it's the background exactly as rendered.
         let image = trim(&image, image.pixels[0]);
         match export.target {
-            ExportTarget::Clipboard => ctx.copy_image(image),
+            ExportTarget::Clipboard => {
+                // The clipboard gets its own PNG encoding; ours is just to tell its size.
+                let bytes = encode_png(&image).map_or(String::new(), |png| format!(" · {}", format_bytes(png.len())));
+                let [w, h] = image.size;
+                let text = format!("Copied to clipboard\n{w} × {h} px{bytes}");
+                let pos = ctx.input(|i| i.pointer.hover_pos());
+                self.notice = Some(Notice { text, pos, shown_at: ctx.input(|i| i.time) });
+                ctx.copy_image(image);
+            }
             ExportTarget::File(path) => {
                 if let Err(err) = write_png(&path, &image) {
                     rfd::MessageDialog::new()

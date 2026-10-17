@@ -48,6 +48,14 @@ struct ResizeDrag {
     start_font_px: f32,
 }
 
+/// A short message shown like a tooltip, e.g. after copying; see `notice`.
+struct Notice {
+    text: String,
+    /// Where the pointer was (screen), if anywhere.
+    pos: Option<Pos2>,
+    shown_at: f64,
+}
+
 /// A stroke, arrow or text box being drawn, in canvas pixels.
 enum Drawing {
     /// Points and when each was added (seconds), for the speed-based pressure.
@@ -90,6 +98,7 @@ pub struct DeerawApp {
     /// Frame of the last Edit > Paste: that paste goes to the canvas center, not under the
     /// pointer (which is still where the menu was).
     menu_paste_frame: Option<u64>,
+    notice: Option<Notice>,
     show_about: bool,
     about_logo: Option<egui::TextureHandle>,
     /// Built once: the OS caches custom cursors by buffer identity.
