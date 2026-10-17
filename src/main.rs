@@ -290,6 +290,14 @@ impl Background {
             Background::Black => Some(Color32::BLACK),
         }
     }
+
+    /// The default drawing color that shows on this background (transparent counts as light).
+    fn ink(self) -> Color32 {
+        match self {
+            Background::Transparent | Background::White => Color32::BLACK,
+            Background::Black => Color32::WHITE,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -722,6 +730,11 @@ impl DeerawApp {
             ] {
                 let clicked = color_swatch(ui, self.background == background, name, background.color());
                 if clicked {
+                    // Drawing with the old background's default ink switches to the new one's
+                    // (black on black would be invisible); a picked color like red stays.
+                    if self.style.color == self.background.ink() {
+                        self.style.color = background.ink();
+                    }
                     self.background = background;
                 }
             }

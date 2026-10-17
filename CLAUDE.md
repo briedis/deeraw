@@ -91,7 +91,9 @@ Keep this list up to date as features are built.
 7. **Canvas background** — picker at the bottom-right (next to the zoom box): transparent
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
    transparent, the PNG has real alpha (the offscreen render clears to transparent).
-   Not in undo history.
+   Each background has a default ink: black on white/transparent, white on black. Switching the
+   background while the drawing color is the old ink switches it to the new one (other colors
+   are kept; existing objects are not recolored). Not in undo history.
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards (picking one collapses it again). Colors: black, white,
