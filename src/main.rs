@@ -1,5 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
+use eframe::egui_wgpu::{self, wgpu};
 use eframe::egui::{
     self, Align2, Color32, ColorImage, CursorIcon, FontId, Painter, PointerButton, Pos2, Rect,
     Sense, Stroke, StrokeKind, TextureHandle, Vec2, emath::Rot2,
@@ -44,6 +45,12 @@ const MAX_UNDO: usize = 200;
 const DUPLICATE_OFFSET: f32 = 20.0;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
+/// Free space around the first pasted image when the window is fitted to it, in points.
+const FIT_MARGIN: f32 = 80.0;
+/// The window is never fitted smaller than this (inner size, in points), so the UI still fits.
+const FIT_MIN_WINDOW: Vec2 = Vec2::new(800.0, 600.0);
+/// The fitted window may take at most this fraction of the screen; bigger images get zoomed out.
+const FIT_MAX_SCREEN: f32 = 0.75;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -86,7 +93,8 @@ struct Object {
 
 #[derive(Clone, PartialEq)]
 enum Kind {
-    Image { texture: TextureHandle },
+    /// `uv` is the part of the texture that's kept (0..1); cropping only changes `uv` and `rect`.
+    Image { texture: TextureHandle, uv: Rect },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     Stroke { points: Vec<Pos2>, color: Color32, width: f32 },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
@@ -296,13 +304,17 @@ struct DeerawApp {
     tool: Tool,
     drawing: Option<Drawing>,
     resize_drag: Option<ResizeDrag>,
+    /// Image currently being cropped; see `crop_ui`.
+    cropping: Option<u64>,
     /// Text object currently being edited.
     editing: Option<u64>,
     focus_editor: bool,
-    /// While copying: the screen region (points) to crop from the screenshot.
-    /// Selection and toolbar are hidden until the screenshot arrives.
-    capture: Option<Rect>,
-    screenshot: Arc<Mutex<Option<Arc<ColorImage>>>>,
+    /// The layers panel, toggled with Ctrl+L.
+    show_layers: bool,
+    /// Last frame's canvas panel position, to keep the drawing still when the panel moves.
+    canvas_min: Option<Pos2>,
+    /// Ctrl+C was pressed; see `copy_step`.
+    copy: Option<CopyStep>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
     i_beam: Option<egui::CustomCursorImage>,
@@ -319,26 +331,25 @@ struct DeerawApp {
 }
 
 impl eframe::App for DeerawApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::Panel::left("layers")
-            .resizable(true)
-            .default_size(220.0)
-            .show(ui, |ui| self.layers_panel(ui));
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
+            self.show_layers = !self.show_layers;
+        }
+        if self.show_layers {
+            egui::Panel::left("layers")
+                .resizable(true)
+                .default_size(220.0)
+                .show(ui, |ui| self.layers_panel(ui));
+        }
 
-        // Transparent shows a checkerboard on screen (painted in `canvas`), but nothing at all
-        // while copying, so the screenshot keeps the alpha.
+        // Transparent shows a checkerboard (painted in `canvas`).
         let fill = self.background.color().unwrap_or(Color32::TRANSPARENT);
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(fill))
             .show(ui, |ui| self.canvas(ui));
-    }
 
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        // The screenshot has the window's alpha, so a transparent copy needs a transparent clear.
-        if self.capture.is_some() && self.background == Background::Transparent {
-            [0.0; 4]
-        } else {
-            egui::Visuals::light().panel_fill.to_normalized_gamma_f32()
+        if let Some(step) = self.copy {
+            self.copy_step(ui.ctx(), frame, step);
         }
     }
 }
@@ -368,9 +379,13 @@ impl DeerawApp {
                     r.height()
                 );
                 match &obj.kind {
-                    Kind::Image { texture } => {
+                    Kind::Image { texture, uv } => {
                         let [w, h] = texture.size();
                         info += &format!("\nsource {w}×{h}");
+                        if *uv != Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)) {
+                            let crop = uv.size() * Vec2::new(w as f32, h as f32);
+                            info += &format!(", cropped to {:.0}×{:.0}", crop.x, crop.y);
+                        }
                     }
                     Kind::Stroke { points, width, .. } => {
                         info += &format!("\n{} points, width {width:.0}px", points.len())
@@ -399,6 +414,10 @@ impl DeerawApp {
     fn canvas(&mut self, ui: &mut egui::Ui) {
         let ppp = ui.ctx().pixels_per_point();
         let canvas_rect = ui.max_rect();
+        // Showing, hiding or resizing the layers panel moves the canvas panel; the drawing stays put.
+        if let Some(previous) = self.canvas_min.replace(canvas_rect.min) {
+            self.pan -= canvas_rect.min - previous;
+        }
         self.navigate(ui, canvas_rect, ppp);
 
         // Canvas pixels <-> screen points. `scale` is screen points per canvas pixel.
@@ -407,8 +426,6 @@ impl DeerawApp {
         let to_screen_pos = |p: Pos2| origin + p.to_vec2() * scale;
         let to_screen = |r: Rect| Rect::from_min_max(to_screen_pos(r.min), to_screen_pos(r.max));
         let to_canvas = |p: Pos2| ((p - origin) / scale).to_pos2();
-
-        self.finish_copy(ui.ctx(), ppp);
 
         // Canvas shortcuts don't apply while typing into a text object.
         if self.editing.is_none() {
@@ -419,14 +436,14 @@ impl DeerawApp {
                             .input(|i| i.pointer.hover_pos())
                             .filter(|p| canvas_rect.contains(*p))
                             .unwrap_or(canvas_rect.center());
-                        self.add_image(ui.ctx(), image, to_canvas(center));
-                    }
-                    egui::Event::Copy => {
-                        if let Some(bounds) = self.bounds() {
-                            let region = to_screen(bounds.expand(EXPORT_PADDING));
-                            self.start_copy(ui.ctx(), region.intersect(canvas_rect));
+                        let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
+                        if self.objects.is_empty() && self.fit_window(ui.ctx(), size, canvas_rect) {
+                            self.add_image(ui.ctx(), image, (size / 2.0).to_pos2());
+                        } else {
+                            self.add_image(ui.ctx(), image, to_canvas(center));
                         }
                     }
+                    egui::Event::Copy if !self.objects.is_empty() => self.copy = Some(CopyStep::LayOut),
                     egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
                         let selected = std::mem::take(&mut self.selected);
                         self.objects.retain(|obj| !selected.contains(&obj.id));
@@ -438,6 +455,10 @@ impl DeerawApp {
                             egui::Key::A => Some(Tool::Arrow),
                             egui::Key::L => Some(Tool::Line),
                             egui::Key::T => Some(Tool::Text),
+                            egui::Key::C => {
+                                self.toggle_crop();
+                                None
+                            }
                             _ => None,
                         };
                         if let Some(tool) = tool {
@@ -474,7 +495,7 @@ impl DeerawApp {
         self.handle_tool(&background, to_canvas);
 
         let painter = ui.painter().clone();
-        if self.background == Background::Transparent && self.capture.is_none() {
+        if self.background == Background::Transparent {
             paint_checkerboard(&painter, canvas_rect, 8.0, 242);
         }
         let selecting = self.tool == Tool::Select;
@@ -523,9 +544,15 @@ impl DeerawApp {
                     }
                     self.selected.push(obj.id);
                 }
-                if response.double_clicked() && matches!(obj.kind, Kind::Text { .. }) {
-                    self.editing = Some(obj.id);
-                    self.focus_editor = true;
+                if response.double_clicked() {
+                    match obj.kind {
+                        Kind::Text { .. } => {
+                            self.editing = Some(obj.id);
+                            self.focus_editor = true;
+                        }
+                        Kind::Image { .. } => self.cropping = Some(obj.id),
+                        _ => {}
+                    }
                 }
                 if response.dragged_by(PointerButton::Primary) {
                     move_by = response.drag_delta() / scale;
@@ -571,15 +598,15 @@ impl DeerawApp {
             None => {}
         }
 
-        if selecting && self.capture.is_none() {
+        if self.cropping.is_some() {
+            self.crop_ui(ui, to_screen, to_canvas, scale);
+        } else if selecting {
             self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
         }
         self.text_editor(ui, to_screen_pos, scale);
-        if self.capture.is_none() {
-            let toolbar = self.toolbar(ui, canvas_rect);
-            self.style_panel(ui, toolbar);
-            self.corner_controls(ui, canvas_rect, ppp);
-        }
+        let toolbar = self.toolbar(ui, canvas_rect);
+        self.style_panel(ui, toolbar);
+        self.corner_controls(ui, canvas_rect, ppp);
         // Set last so it wins over hover cursors of whatever is under the pointer.
         if self.panning {
             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
@@ -587,6 +614,7 @@ impl DeerawApp {
 
         let settled = !ui.input(|i| i.pointer.any_down())
             && self.editing.is_none()
+            && self.cropping.is_none()
             && self.drawing.is_none();
         if settled {
             self.history.record(&self.objects);
@@ -1215,11 +1243,104 @@ impl DeerawApp {
                                 self.tool = tool;
                             }
                         }
+                        // Only offered while an image is selected (or being cropped).
+                        if self.cropping.is_some() || self.selected_image().is_some() {
+                            ui.separator();
+                            let crop = egui::Button::selectable(self.cropping.is_some(), "✂ Crop");
+                            if ui.add(crop).on_hover_text("Crop image (C, or double-click it)").clicked() {
+                                self.toggle_crop();
+                            }
+                        }
                     });
                 });
             })
             .response
             .rect
+    }
+
+    /// The id of the selected image, if exactly one image is selected.
+    fn selected_image(&self) -> Option<u64> {
+        let [id] = self.selected[..] else { return None };
+        self.objects.iter().any(|o| o.id == id && matches!(o.kind, Kind::Image { .. })).then_some(id)
+    }
+
+    /// Starts cropping the selected image, or finishes the current crop.
+    fn toggle_crop(&mut self) {
+        if self.cropping.is_some() {
+            self.cropping = None;
+        } else if let Some(id) = self.selected_image() {
+            self.tool = Tool::Select;
+            self.cropping = Some(id);
+        }
+    }
+
+    /// Crop mode: the whole source image shows dimmed around the kept part. The kept part's
+    /// edges and corners drag freely within the source; dragging inside it slides it over the
+    /// source. Enter, Escape, C, clicking elsewhere or switching tools finishes. The crop stays
+    /// editable: `uv` keeps the whole texture around.
+    fn crop_ui(&mut self, ui: &mut egui::Ui, to_screen: impl Fn(Rect) -> Rect, to_canvas: impl Fn(Pos2) -> Pos2, scale: f32) {
+        let Some(id) = self.cropping else { return };
+        let finish = ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
+        let still_cropping = !finish && self.tool == Tool::Select && self.selected == [id];
+        let obj = self.objects.iter_mut().find(|o| o.id == id).filter(|_| still_cropping);
+        let Some(Object { rect: kept, aspect, kind: Kind::Image { texture, uv }, .. }) = obj else {
+            self.cropping = None;
+            return;
+        };
+        let full = uncropped_rect(*kept, *uv);
+        let painter = ui.painter();
+        let whole = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        painter.image(texture.id(), to_screen(full), whole, Color32::WHITE.gamma_multiply(0.35));
+        painter.image(texture.id(), to_screen(*kept), *uv, Color32::WHITE);
+        painter.rect_stroke(to_screen(full), 0.0, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
+        painter.rect_stroke(to_screen(*kept), 0.0, Stroke::new(1.5, SELECTION_COLOR), StrokeKind::Outside);
+
+        let inside = ui.interact(to_screen(*kept), egui::Id::unique(("crop-move", id)), Sense::drag());
+        if inside.dragged_by(PointerButton::Primary) {
+            let moved = kept.translate(inside.drag_delta() / scale);
+            let min = moved.min.clamp(full.min, full.max - kept.size());
+            *kept = Rect::from_min_size(min, kept.size());
+        }
+        if inside.hovered() || inside.dragged() {
+            ui.ctx().set_cursor_icon(CursorIcon::Move);
+        }
+
+        for (dx, dy) in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, -1), (0, 1), (-1, 0), (1, 0)] {
+            let screen = to_screen(*kept);
+            let center = Pos2::new(
+                [screen.min.x, screen.center().x, screen.max.x][(dx + 1) as usize],
+                [screen.min.y, screen.center().y, screen.max.y][(dy + 1) as usize],
+            );
+            let handle = Rect::from_center_size(center, Vec2::splat(HANDLE_SIZE));
+            let response = ui.interact(handle.expand(2.0), egui::Id::unique(("crop-handle", id, dx, dy)), Sense::drag());
+            let pointer = response.interact_pointer_pos().map(&to_canvas);
+            if let (true, Some(p)) = (response.drag_started_by(PointerButton::Primary), pointer) {
+                let handle_pos = kept.lerp_inside(Vec2::new(dx as f32 + 1.0, dy as f32 + 1.0) / 2.0);
+                self.resize_drag = Some(ResizeDrag { start: *kept, grab_offset: p - handle_pos, start_font_px: 0.0 });
+            }
+            if let (true, Some(p), Some(drag)) =
+                (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
+            {
+                *kept = resize_to(drag.start, dx, dy, p - drag.grab_offset, None, false).intersect(full);
+            }
+            if response.drag_stopped() {
+                self.resize_drag = None;
+            }
+            if response.hovered() || response.dragged() {
+                ui.ctx().set_cursor_icon(match (dx, dy) {
+                    (0, _) => CursorIcon::ResizeVertical,
+                    (_, 0) => CursorIcon::ResizeHorizontal,
+                    _ if dx == dy => CursorIcon::ResizeNwSe,
+                    _ => CursorIcon::ResizeNeSw,
+                });
+            }
+            painter.rect_filled(handle, 2.0, Color32::WHITE);
+            painter.rect_stroke(handle, 2.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
+        }
+        *uv = crop_uv(full, *kept);
+        // Corner resizing keeps the cropped part's undistorted proportions.
+        let [w, h] = texture.size();
+        *aspect = (uv.width() * w as f32) / (uv.height() * h as f32);
     }
 
     /// Copies the selected objects on top, offset a little, and selects the copies.
@@ -1254,7 +1375,43 @@ impl DeerawApp {
         );
         let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
         let min = (center - size / 2.0).round();
-        self.add(Rect::from_min_size(min, size), Kind::Image { texture });
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv });
+    }
+
+    /// For the first image on an empty canvas: resizes the window to show `size` (canvas pixels,
+    /// placed at the canvas origin) centered with `FIT_MARGIN` around it, zooming out if the window
+    /// would exceed `FIT_MAX_SCREEN` of the screen, and never below `FIT_MIN_WINDOW`. Returns
+    /// false (changing nothing) if the window is maximized/fullscreen or its size is unknown.
+    fn fit_window(&mut self, ctx: &egui::Context, size: Vec2, canvas_rect: Rect) -> bool {
+        let (inner, monitor, locked) = ctx.input(|i| {
+            let v = i.viewport();
+            (v.inner_rect, v.monitor_size, v.maximized == Some(true) || v.fullscreen == Some(true))
+        });
+        let (Some(inner), Some(monitor)) = (inner, monitor) else { return false };
+        if locked {
+            return false;
+        }
+        let ppp = ctx.pixels_per_point();
+        // Everything around the canvas (layers panel etc.) keeps its size.
+        let chrome = inner.size() - canvas_rect.size();
+        let max_window = monitor * FIT_MAX_SCREEN;
+        let window_at = |level: i32| {
+            let zoom = 1.0 + ZOOM_STEP * level as f32;
+            chrome + size * zoom / ppp + Vec2::splat(2.0 * FIT_MARGIN)
+        };
+        self.zoom_level = (MIN_ZOOM_LEVEL..=0)
+            .rev()
+            .find(|&level| {
+                let window = window_at(level);
+                window.x <= max_window.x && window.y <= max_window.y
+            })
+            .unwrap_or(MIN_ZOOM_LEVEL);
+        let window = window_at(self.zoom_level).max(FIT_MIN_WINDOW).round();
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(window));
+        let canvas = window - chrome;
+        self.pan = ((canvas - size * self.zoom() / ppp) / 2.0).round();
+        true
     }
 
     /// Bounding box of all objects, in canvas pixels.
@@ -1263,24 +1420,144 @@ impl DeerawApp {
         Some(self.objects.iter().fold(first.rect, |acc, obj| acc.union(obj.rect)))
     }
 
-    /// Copying works by screenshotting the canvas: this frame and the next are
-    /// drawn without selection and toolbar, then `finish_copy` crops the result.
-    fn start_copy(&mut self, ctx: &egui::Context, region: Rect) {
-        self.capture = Some(region);
-        let slot = self.screenshot.clone();
-        let repaint = ctx.clone();
-        ctx.request_screenshot(move |image| {
-            *slot.lock().unwrap() = Some(image);
-            repaint.request_repaint();
-        });
-    }
-
-    fn finish_copy(&mut self, ctx: &egui::Context, ppp: f32) {
-        let Some(screenshot) = self.screenshot.lock().unwrap().take() else { return };
-        if let Some(region) = self.capture.take() {
-            ctx.copy_image(screenshot.region(&region, Some(ppp)));
+    /// Copying renders all objects offscreen at 1 canvas pixel per image pixel (less only if
+    /// that exceeds the GPU's texture size limit), whatever the view. Text needs its glyphs in
+    /// the GPU font atlas, which is only uploaded at the end of a frame, so the first step just
+    /// lays everything out and the render happens a frame later.
+    fn copy_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, step: CopyStep) {
+        let (Some(bounds), Some(render_state)) = (self.bounds(), frame.wgpu_render_state()) else {
+            self.copy = None;
+            return;
+        };
+        let region = bounds.expand(EXPORT_PADDING);
+        let max_size = render_state.device.limits().max_texture_dimension_2d as f32;
+        let pixel_scale = (max_size / region.size().max_elem()).min(1.0);
+        let size = (region.size() * pixel_scale).ceil();
+        let ppp = ctx.pixels_per_point();
+        let shapes = self.export_shapes(ctx, region, pixel_scale / ppp, size / ppp);
+        match step {
+            CopyStep::LayOut => {
+                self.copy = Some(CopyStep::Render);
+                ctx.request_repaint();
+            }
+            CopyStep::Render => {
+                self.copy = None;
+                let primitives = ctx.tessellate(shapes, ppp);
+                let clear = self.background.color().map_or([0.0; 4], |c| c.to_normalized_gamma_f32());
+                let size = [size.x as u32, size.y as u32];
+                if let Some(image) = render_offscreen(render_state, &primitives, size, ppp, clear) {
+                    ctx.copy_image(image);
+                }
+            }
         }
     }
+
+    /// Paints every object with `region` (canvas pixels) at the origin and `scale` points per
+    /// canvas pixel, into a throwaway layer whose shapes are returned instead of shown.
+    fn export_shapes(&self, ctx: &egui::Context, region: Rect, scale: f32, size: Vec2) -> Vec<egui::epaint::ClippedShape> {
+        let layer = egui::LayerId::new(egui::Order::Background, egui::Id::unique("export"));
+        let painter = Painter::new(ctx.clone(), layer, Rect::from_min_size(Pos2::ZERO, size));
+        let to_screen_pos = |p: Pos2| Pos2::ZERO + (p - region.min) * scale;
+        for obj in &self.objects {
+            let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
+            paint_object(&painter, obj, rect, to_screen_pos, scale);
+        }
+        ctx.graphics_mut(|graphics| {
+            let list = std::mem::take(graphics.entry(layer));
+            list.all_entries().cloned().collect()
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+enum CopyStep {
+    LayOut,
+    Render,
+}
+
+/// Renders tessellated shapes into an offscreen texture with egui's own wgpu renderer (so it
+/// shares the font atlas and image textures) and reads it back. `size` is in pixels.
+fn render_offscreen(
+    render_state: &egui_wgpu::RenderState,
+    primitives: &[egui::ClippedPrimitive],
+    size: [u32; 2],
+    pixels_per_point: f32,
+    clear: [f32; 4],
+) -> Option<ColorImage> {
+    let egui_wgpu::RenderState { device, queue, target_format, .. } = render_state;
+    // The renderer's pipeline is built for the window's format; egui renders gamma-space RGBA/BGRA.
+    let to_rgba = match target_format {
+        wgpu::TextureFormat::Rgba8Unorm => [0, 1, 2, 3],
+        wgpu::TextureFormat::Bgra8Unorm => [2, 1, 0, 3],
+        _ => return None,
+    };
+    let extent = wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 };
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("deeraw_export"),
+        size: extent,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: *target_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&Default::default());
+    let row_bytes = wgpu::util::align_to(size[0] * 4, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("deeraw_export"),
+        size: (row_bytes * size[1]) as u64,
+        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: size, pixels_per_point };
+    let mut encoder = device.create_command_encoder(&Default::default());
+    let mut renderer = render_state.renderer.write();
+    let mut commands = renderer.update_buffers(device, queue, &mut encoder, primitives, &screen);
+    let [r, g, b, a] = clear.map(f64::from);
+    let pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("deeraw_export"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view: &view,
+            resolve_target: None,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                store: wgpu::StoreOp::Store,
+            },
+            depth_slice: None,
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    renderer.render(&mut pass.forget_lifetime(), primitives, &screen);
+    drop(renderer);
+    encoder.copy_texture_to_buffer(
+        texture.as_image_copy(),
+        wgpu::TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(row_bytes),
+                rows_per_image: None,
+            },
+        },
+        extent,
+    );
+    commands.push(encoder.finish());
+    queue.submit(commands);
+
+    buffer.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+    device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).ok()?;
+    let data = buffer.slice(..).get_mapped_range().ok()?;
+    let pixels = data
+        .chunks(row_bytes as usize)
+        .flat_map(|row| row[..size[0] as usize * 4].chunks(4))
+        .map(|c| Color32::from_rgba_premultiplied(c[to_rgba[0]], c[to_rgba[1]], c[to_rgba[2]], c[to_rgba[3]]))
+        .collect();
+    Some(ColorImage::new([size[0] as usize, size[1] as usize], pixels))
 }
 
 /// Screen-aligned checkerboard standing in for a transparent background.
@@ -1380,9 +1657,8 @@ fn outlined_cursor(size: usize, hotspot: [usize; 2], ink: impl Fn(usize, usize) 
 
 fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
     match &obj.kind {
-        Kind::Image { texture } => {
-            let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-            painter.image(texture.id(), rect, uv, Color32::WHITE);
+        Kind::Image { texture, uv } => {
+            painter.image(texture.id(), rect, *uv, Color32::WHITE);
         }
         Kind::Stroke { points, color, width } => {
             let points = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
@@ -1486,6 +1762,18 @@ fn normalize(points: &[Pos2]) -> (Rect, Vec<Pos2>) {
     (rect, normalized)
 }
 
+/// Where the whole source image would be, for an image showing the `uv` part of it in `rect`.
+fn uncropped_rect(rect: Rect, uv: Rect) -> Rect {
+    let size = rect.size() / uv.size();
+    Rect::from_min_size(rect.min - uv.min.to_vec2() * size, size)
+}
+
+/// The `uv` that shows the part `rect` of an image whose whole source is at `full`.
+fn crop_uv(full: Rect, rect: Rect) -> Rect {
+    let to_uv = |p: Pos2| ((p - full.min) / full.size()).to_pos2();
+    Rect::from_min_max(to_uv(rect.min), to_uv(rect.max))
+}
+
 /// Resizes `start` so the handle at direction (`dx`, `dy`) lands on `target` (canvas pixels).
 /// -1 = min edge, 1 = max edge, 0 = that axis is untouched. Corner handles fit the size to
 /// `aspect` (if given; otherwise both axes follow the cursor), letting the axis the cursor pulled further win. With `from_center` the center
@@ -1525,6 +1813,15 @@ mod tests {
 
     fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> Rect {
         Rect::from_min_max(Pos2::new(x0, y0), Pos2::new(x1, y1))
+    }
+
+    #[test]
+    fn crop_uv_round_trips() {
+        let full = rect(100.0, 50.0, 500.0, 250.0);
+        let kept = rect(200.0, 100.0, 300.0, 250.0);
+        let uv = crop_uv(full, kept);
+        assert_eq!(uv, rect(0.25, 0.25, 0.5, 1.0));
+        assert_eq!(uncropped_rect(kept, uv), full);
     }
 
     #[test]

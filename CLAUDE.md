@@ -25,12 +25,24 @@ Keep this list up to date as features are built.
 
 1. **Image canvas** — white canvas (1024×768 window).
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
+   - Pasting into an empty canvas fits the window to the image instead: inner size = image + 80pt
+     margin on each side + layers panel (if shown), at least 800×600, and the image centered. If that would
+     exceed 75% of the screen, it zooms out (20% steps) until it fits. Skipped when maximized or
+     fullscreen. The window isn't moved, so a big one can extend past the screen edge.
+   - Ctrl+C copies everything (not just what's visible) as a PNG cropped to the content's bounding
+     box (+10px padding), at 1 canvas pixel per PNG pixel whatever the zoom (scaled down only past
+     the GPU's max texture size). No selection or UI in it. Clipboard gets PNG + DIB formats.
+   - Pasting into an empty canvas fits the window to the image instead: inner size = image + 80pt
+     margin on each side + layers panel (if shown), at least 800×600, and the image centered. If that would
+     exceed 75% of the screen, it zooms out (20% steps) until it fits. Skipped when maximized or
+     fullscreen. The window isn't moved, so a big one can extend past the screen edge.
    - Ctrl+C copies the canvas as a PNG: a screenshot of the canvas cropped to the content's
      bounding box (+10px padding), with selection/toolbar hidden for that frame. Only the
      visible part of the canvas is captured. Clipboard gets PNG + DIB formats.
-2. **Layers panel** — resizable left panel listing every object, topmost first, with its
+2. **Layers panel** — hidden by default; Ctrl+L toggles it (works anywhere, even while typing). Resizable left panel listing every object, topmost first, with its
    position, size and kind-specific info (source size, point count, font size). Doubles as a
-   debug view. Clicking a row selects it.
+   debug view. Clicking a row selects it. Showing/hiding/resizing it doesn't move the drawing
+   on screen (`pan` is compensated when the canvas panel's position changes).
 3. **Selection & resize** — with the Select tool, click an object to select it (new objects are
    selected automatically); click empty canvas to deselect; drag to move. The selected object gets
    an outline and 8 handles: corners resize with the object's *original* aspect ratio (so they
@@ -44,8 +56,8 @@ Keep this list up to date as features are built.
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text.
-   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text;
+4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected.
+   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
    Escape goes back to Select. Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
@@ -60,17 +72,23 @@ Keep this list up to date as features are built.
      panel); the box grows taller if the text overflows. All 8 handles resize the box freely
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
      Double-click a text object to edit it. Switches back to Select afterwards.
+   - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only
+     while exactly one image is selected) or by double-clicking an image. The whole source image shows dimmed and
+     outlined, the kept part bright with 8 handles that drag its edges/corners freely within the
+     source; dragging inside it slides the kept part over the source. Enter, Escape, C, the Crop
+     button, clicking elsewhere or switching tools finishes. Non-destructive: images store `uv`
+     (the kept part of the texture, 0..1), so recropping can widen it again. After cropping,
+     corner resizing keeps the cropped part's undistorted proportions. One undo step per crop session.
 5. **Pan & zoom** — middle-button drag pans. Mouse wheel zooms around the cursor; Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
-   Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%. Copy captures at the
-   current zoom.
+   Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
    change to objects: paste, draw, text, move, resize, arrow points, delete. Not in history:
    selection, tool, pan/zoom.
 7. **Canvas background** — picker at the bottom-right (next to the zoom box): transparent
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
-   transparent, the PNG has real alpha (canvas fill and the window clear color are transparent
-   for the capture frame, and the screenshot keeps alpha). Not in undo history.
+   transparent, the PNG has real alpha (the offscreen render clears to transparent).
+   Not in undo history.
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards (picking one collapses it again). Colors: black, white,
@@ -83,7 +101,8 @@ Keep this list up to date as features are built.
 
 ## Current state
 
-- All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. `cargo test` covers the
+- All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. Dev builds optimize
+  dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   resize math (`resize_to`).
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
   displays 1:1 at 100% zoom. View transform: `screen = panel_min + pan + canvas * scale`, with
@@ -100,7 +119,11 @@ Keep this list up to date as features are built.
   New features get undo for free as long as all their state lives in `objects`. Anything that
   feeds into `Object` equality must be stable across frames (e.g. text rects are measured at a
   fixed scale, not the current zoom), or spurious steps get recorded.
-- Copy uses `ctx.request_screenshot` (arrives a frame later) rather than CPU rendering.
+- Copy renders offscreen with eframe's own `egui_wgpu::Renderer` (`frame.wgpu_render_state()`), so it
+  shares the font atlas and image textures: objects are painted into a throwaway layer whose shapes
+  are taken back out (`export_shapes`), tessellated and rendered to a texture, then read back
+  (`render_offscreen`). It takes two frames because new glyphs only reach the GPU atlas at the end
+  of a frame.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
 - Clipboard needs no extra crates: egui-winit emits `Event::PasteImage` (when the clipboard has
