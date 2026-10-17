@@ -1,0 +1,76 @@
+# Deeraw
+
+A Windows desktop drawing app in Rust, inspired by Excalidraw (hand-drawn style whiteboard).
+
+## Approach
+
+Build **very incrementally**: one small, runnable step at a time. Each step should compile, run, and be committed before moving on. Don't add features, crates or abstractions ahead of the step that needs them.
+
+## Environment
+
+- Develop natively on Windows (not WSL). The project lives at `C:\dev\deeraw`.
+- Toolchain: rustup with the MSVC target (`x86_64-pc-windows-msvc`), which needs the Visual Studio C++ Build Tools.
+- Build/run: `cargo run`. Release build: `cargo build --release` → `target\release\deeraw.exe`.
+
+### First-time setup on a new machine
+
+1. Install Rust from https://rustup.rs and accept the prompt to install the Visual Studio C++ Build Tools.
+2. Open a new terminal, `cd C:\dev\deeraw`, run `cargo run`. Expected output: `Hello from Deeraw!`
+3. If git complains about "dubious ownership" (the repo was created from WSL), run:
+   `git config --global --add safe.directory C:/dev/deeraw`
+
+## Features
+
+Keep this list up to date as features are built.
+
+1. **Image canvas** — white canvas (1024×768 window).
+   - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
+   - Ctrl+C copies the canvas as a PNG: a screenshot of the canvas cropped to the content's
+     bounding box (+10px padding), with selection/toolbar hidden for that frame. Only the
+     visible part of the canvas is captured. Clipboard gets PNG + DIB formats.
+2. **Layers panel** — resizable left panel listing every object, topmost first, with its
+   position, size and kind-specific info (source size, point count, font size). Doubles as a
+   debug view. Clicking a row selects it.
+3. **Selection & resize** — with the Select tool, click an object to select it (new objects are
+   selected automatically); click empty canvas to deselect; drag to move. The selected object gets
+   an outline and 8 handles: corners resize with the object's *original* aspect ratio (so they
+   undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
+   vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
+   the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
+   Min size 4px. Delete removes the selected object. Hit-testing uses the bounding box.
+4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Text.
+   - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
+   - Arrow: drag from start to end; switches back to Select afterwards.
+   - Text: click to place a text box and type (multi-line). Escape or clicking elsewhere finishes;
+     empty text is discarded. Double-click a text object to edit it. Text has only corner handles
+     (resizing scales the font). Switches back to Select afterwards.
+
+## Current state
+
+- All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. `cargo test` covers the
+  resize math (`resize_to`).
+- Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels (physical pixels, not egui
+  points; origin = central panel's top-left), so a fresh image paste displays 1:1. Stroke and
+  arrow points are normalized (0..1) to `rect`, so move/resize only change `rect`. Text `rect`
+  is re-synced to the text layout every frame; resizing text scales `font_px`.
+- Copy uses `ctx.request_screenshot` (arrives a frame later) rather than CPU rendering.
+- eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
+  `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
+- Clipboard needs no extra crates: egui-winit emits `Event::PasteImage` (when the clipboard has
+  no text) and `ctx.copy_image()` writes PNG via arboard.
+- Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
+  toolbar icons visually.
+- From WSL, run Windows cargo via `powershell.exe` (`$env:USERPROFILE\.cargo\bin\cargo.exe`).
+- Git repo on `master`; commit after each working step.
+
+## Planned next steps
+
+Ideas, not commitments (eframe/egui was chosen for quick setup, easy mouse input and 2D painting):
+
+1. Freehand drawing: draw strokes with the mouse on a canvas.
+2. Basic shapes: rectangle, ellipse, line/arrow.
+3. Selecting and moving shapes.
+4. Save/load a drawing to a file.
+5. Later: hand-drawn ("rough") rendering style, undo/redo, text, pan/zoom, export to PNG/SVG.
+
+Order and scope are open to change; confirm with the user before starting each step.
