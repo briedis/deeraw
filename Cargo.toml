@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 eframe = "0.37.0"
+png = { version = "0.18", default-features = false }
+rfd = { version = "0.17.2", default-features = false }
 
 # egui/wgpu are very slow unoptimized (laggy window dragging), so optimize dependencies even
 # in dev builds; our own crate stays quick to compile.

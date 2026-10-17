@@ -1,3 +1,4 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use eframe::egui_wgpu::{self, wgpu};
@@ -313,8 +314,10 @@ struct DeerawApp {
     show_layers: bool,
     /// Last frame's canvas panel position, to keep the drawing still when the panel moves.
     canvas_min: Option<Pos2>,
-    /// Ctrl+C was pressed; see `copy_step`.
-    copy: Option<CopyStep>,
+    /// Ctrl+C or Ctrl+S was pressed; see `export_step`.
+    export: Option<Export>,
+    /// Folder of the last Ctrl+S save, where the next save dialog opens.
+    save_dir: Option<PathBuf>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
     i_beam: Option<egui::CustomCursorImage>,
@@ -348,8 +351,8 @@ impl eframe::App for DeerawApp {
             .frame(egui::Frame::new().fill(fill))
             .show(ui, |ui| self.canvas(ui));
 
-        if let Some(step) = self.copy {
-            self.copy_step(ui.ctx(), frame, step);
+        if let Some(export) = self.export.take() {
+            self.export_step(ui.ctx(), frame, export);
         }
     }
 }
@@ -443,12 +446,18 @@ impl DeerawApp {
                             self.add_image(ui.ctx(), image, to_canvas(center));
                         }
                     }
-                    egui::Event::Copy if !self.objects.is_empty() => self.copy = Some(CopyStep::LayOut),
-                    egui::Event::Key { key: egui::Key::Delete, pressed: true, .. } => {
+                    egui::Event::Copy if !self.objects.is_empty() => {
+                        self.export = Some(Export { step: ExportStep::LayOut, target: ExportTarget::Clipboard });
+                    }
+                    egui::Event::Key { key: egui::Key::Delete | egui::Key::Backspace, pressed: true, .. } => {
                         let selected = std::mem::take(&mut self.selected);
                         self.objects.retain(|obj| !selected.contains(&obj.id));
                     }
                     egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                        // Escape first just ends a crop; otherwise it also deselects.
+                        if key == egui::Key::Escape && self.cropping.is_none() {
+                            self.selected.clear();
+                        }
                         let tool = match key {
                             egui::Key::V | egui::Key::Escape => Some(Tool::Select),
                             egui::Key::P => Some(Tool::Pencil),
@@ -474,6 +483,7 @@ impl DeerawApp {
                             egui::Key::Z => self.history.undo(&mut self.objects),
                             egui::Key::Y => self.history.redo(&mut self.objects),
                             egui::Key::D => self.duplicate_selected(),
+                            egui::Key::S => self.save_as(),
                             egui::Key::A => {
                                 self.tool = Tool::Select;
                                 self.selected = self.objects.iter().map(|o| o.id).collect();
@@ -1420,13 +1430,33 @@ impl DeerawApp {
         Some(self.objects.iter().fold(first.rect, |acc, obj| acc.union(obj.rect)))
     }
 
-    /// Copying renders all objects offscreen at 1 canvas pixel per image pixel (less only if
+    /// Ctrl+S: asks where to save (named after the current local time), then exports there.
+    fn save_as(&mut self) {
+        if self.objects.is_empty() {
+            return;
+        }
+        let name = chrono::Local::now().format("%Y-%m-%d_%H%M%S.png").to_string();
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Save as image")
+            .add_filter("PNG image", &["png"])
+            .set_file_name(name);
+        if let Some(dir) = &self.save_dir {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(mut path) = dialog.save_file() else { return };
+        if path.extension().is_none() {
+            path.set_extension("png");
+        }
+        self.save_dir = path.parent().map(Path::to_path_buf);
+        self.export = Some(Export { step: ExportStep::LayOut, target: ExportTarget::File(path) });
+    }
+
+    /// Exporting renders all objects offscreen at 1 canvas pixel per image pixel (less only if
     /// that exceeds the GPU's texture size limit), whatever the view. Text needs its glyphs in
     /// the GPU font atlas, which is only uploaded at the end of a frame, so the first step just
     /// lays everything out and the render happens a frame later.
-    fn copy_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, step: CopyStep) {
+    fn export_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, export: Export) {
         let (Some(bounds), Some(render_state)) = (self.bounds(), frame.wgpu_render_state()) else {
-            self.copy = None;
             return;
         };
         let region = bounds.expand(EXPORT_PADDING);
@@ -1435,18 +1465,24 @@ impl DeerawApp {
         let size = (region.size() * pixel_scale).ceil();
         let ppp = ctx.pixels_per_point();
         let shapes = self.export_shapes(ctx, region, pixel_scale / ppp, size / ppp);
-        match step {
-            CopyStep::LayOut => {
-                self.copy = Some(CopyStep::Render);
-                ctx.request_repaint();
-            }
-            CopyStep::Render => {
-                self.copy = None;
-                let primitives = ctx.tessellate(shapes, ppp);
-                let clear = self.background.color().map_or([0.0; 4], |c| c.to_normalized_gamma_f32());
-                let size = [size.x as u32, size.y as u32];
-                if let Some(image) = render_offscreen(render_state, &primitives, size, ppp, clear) {
-                    ctx.copy_image(image);
+        if let ExportStep::LayOut = export.step {
+            self.export = Some(Export { step: ExportStep::Render, ..export });
+            ctx.request_repaint();
+            return;
+        }
+        let primitives = ctx.tessellate(shapes, ppp);
+        let clear = self.background.color().map_or([0.0; 4], |c| c.to_normalized_gamma_f32());
+        let size = [size.x as u32, size.y as u32];
+        let Some(image) = render_offscreen(render_state, &primitives, size, ppp, clear) else { return };
+        match export.target {
+            ExportTarget::Clipboard => ctx.copy_image(image),
+            ExportTarget::File(path) => {
+                if let Err(err) = write_png(&path, &image) {
+                    rfd::MessageDialog::new()
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_title("Couldn't save image")
+                        .set_description(format!("{}\n\n{err}", path.display()))
+                        .show();
                 }
             }
         }
@@ -1469,10 +1505,32 @@ impl DeerawApp {
     }
 }
 
-#[derive(Clone, Copy)]
-enum CopyStep {
+struct Export {
+    step: ExportStep,
+    target: ExportTarget,
+}
+
+enum ExportStep {
     LayOut,
     Render,
+}
+
+enum ExportTarget {
+    Clipboard,
+    File(PathBuf),
+}
+
+/// Writes `image` (premultiplied, as egui keeps it) as an RGBA PNG.
+fn write_png(path: &Path, image: &ColorImage) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+    let mut encoder = png::Encoder::new(file, image.size[0] as u32, image.size[1] as u32);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header()?;
+    let data: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+    writer.write_image_data(&data)?;
+    writer.finish()?;
+    Ok(())
 }
 
 /// Renders tessellated shapes into an offscreen texture with egui's own wgpu renderer (so it
@@ -1813,6 +1871,20 @@ mod tests {
 
     fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> Rect {
         Rect::from_min_max(Pos2::new(x0, y0), Pos2::new(x1, y1))
+    }
+
+    #[test]
+    fn png_is_written_unmultiplied() {
+        let pixels = vec![Color32::from_rgba_unmultiplied(255, 0, 0, 128), Color32::TRANSPARENT];
+        let path = std::env::temp_dir().join("deeraw-test.png");
+        write_png(&path, &ColorImage::new([2, 1], pixels)).unwrap();
+        let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap()));
+        let mut reader = decoder.read_info().unwrap();
+        let mut data = vec![0; reader.output_buffer_size().unwrap()];
+        reader.next_frame(&mut data).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(reader.info().size(), (2, 1));
+        assert_eq!(data, [255, 0, 0, 128, 0, 0, 0, 0]);
     }
 
     #[test]

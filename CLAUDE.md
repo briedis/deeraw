@@ -25,6 +25,9 @@ Keep this list up to date as features are built.
 
 1. **Image canvas** — white canvas (1024×768 window).
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
+   - Ctrl+S saves the same image as a PNG file: a Save As dialog (rfd) suggests
+     `YYYY-MM-DD_HHMMSS.png` (local time) and opens in the last save's folder (per session).
+     `.png` is added if no extension is typed; a failed write shows an error dialog.
    - Pasting into an empty canvas fits the window to the image instead: inner size = image + 80pt
      margin on each side + layers panel (if shown), at least 800×600, and the image centered. If that would
      exceed 75% of the screen, it zooms out (20% steps) until it fits. Skipped when maximized or
@@ -49,7 +52,7 @@ Keep this list up to date as features are built.
    undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
    vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
-   Min size 4px. Delete removes the selected object(s); Ctrl+D duplicates them (copies offset by
+   Min size 4px. Delete or Backspace removes the selected object(s); Ctrl+D duplicates them (copies offset by
    20px, on top, and selected). Ctrl+A selects everything (and switches to Select).
    **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
    dragging on empty canvas draws a selection box that selects objects entirely inside it
@@ -58,7 +61,7 @@ Keep this list up to date as features are built.
    arrows (see below).
 4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
-   Escape goes back to Select. Switching tools cancels a half-drawn shape or selection box.
+   Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
    - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
@@ -101,7 +104,8 @@ Keep this list up to date as features are built.
 
 ## Current state
 
-- All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. Dev builds optimize
+- All code in `src/main.rs`. Dependencies: eframe 0.37, rfd (file/message dialogs), png (already
+  in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   resize math (`resize_to`).
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
