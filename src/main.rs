@@ -23,6 +23,8 @@ const PALETTE: [(Color32, &str); 6] = [
 const LINE_WIDTHS: [f32; 4] = [2.0, 3.0, 6.0, 10.0];
 /// Font sizes offered by the style panel, in canvas pixels.
 const FONT_SIZES: [f32; 4] = [16.0, 28.0, 44.0, 64.0];
+/// Narrowest text box, in canvas pixels; narrower drags place single-line text instead.
+const MIN_TEXT_BOX: f32 = 20.0;
 /// Length of an arrow's head lines, in canvas pixels: base plus this much per pixel of line width.
 const ARROW_HEAD: f32 = 12.0;
 const ARROW_HEAD_PER_WIDTH: f32 = 2.0;
@@ -88,8 +90,18 @@ enum Kind {
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
     /// Without `head` it's a plain line (Line tool).
     Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, head: bool },
-    /// `rect` follows the laid-out text; resizing scales `font_px`.
-    Text { text: String, font_px: f32, color: Color32 },
+    /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
+    /// Enter and resizing scales `font_px`. With `frame` (drag a box), see `TextFrame`.
+    Text { text: String, font_px: f32, color: Color32, frame: Option<TextFrame> },
+}
+
+/// A text box: lines wrap at its width and the text is aligned inside it. Resizing changes
+/// the box, not the font. The object's `rect` is the box, grown taller if the text overflows.
+#[derive(Clone, Copy, PartialEq)]
+struct TextFrame {
+    /// Canvas pixels.
+    size: Vec2,
+    align: Align2,
 }
 
 /// Which part of the style panel is expanded.
@@ -97,6 +109,7 @@ enum Kind {
 enum StyleSection {
     Color,
     Size(SizeKind),
+    Align,
 }
 
 /// Which size the style panel edits.
@@ -112,11 +125,13 @@ struct Style {
     color: Color32,
     line_width: f32,
     font_px: f32,
+    /// For text boxes.
+    align: Align2,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1] }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], align: Align2::LEFT_TOP }
     }
 }
 
@@ -143,6 +158,14 @@ impl Object {
         match &mut self.kind {
             Kind::Image { .. } => None,
             Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Text { color, .. } => Some(color),
+        }
+    }
+
+    /// Alignment, for text boxes only.
+    fn align_mut(&mut self) -> Option<&mut Align2> {
+        match &mut self.kind {
+            Kind::Text { frame: Some(frame), .. } => Some(&mut frame.align),
+            _ => None,
         }
     }
 
@@ -176,12 +199,16 @@ struct ResizeDrag {
     start: Rect,
     /// Pointer minus handle position at drag start, so the handle stays under the cursor.
     grab_offset: Vec2,
+    /// Font size at drag start (plain text). The new size is derived from it, not from the
+    /// previous frame, because the text layout re-sizes the rect every frame.
+    start_font_px: f32,
 }
 
-/// A stroke or arrow being drawn, in canvas pixels.
+/// A stroke, arrow or text box being drawn, in canvas pixels.
 enum Drawing {
     Stroke(Vec<Pos2>),
     Arrow(Pos2, Pos2),
+    TextBox(Pos2, Pos2),
 }
 
 /// Undo/redo by snapshots of the object list. Whenever the canvas settles (no mouse button
@@ -334,7 +361,12 @@ impl DeerawApp {
                     Kind::Stroke { points, width, .. } => {
                         info += &format!("\n{} points, width {width:.0}px", points.len())
                     }
-                    Kind::Text { font_px, .. } => info += &format!("\nfont {font_px:.0}px"),
+                    Kind::Text { font_px, frame, .. } => {
+                        info += &format!("\nfont {font_px:.0}px");
+                        if let Some(frame) = frame {
+                            info += &format!(", box {}", align_name(frame.align));
+                        }
+                    }
                     Kind::Arrow { width, .. } => info += &format!("\nwidth {width:.0}px"),
                 }
                 ui.weak(info);
@@ -417,11 +449,15 @@ impl DeerawApp {
         let mut clicked = None;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
-            if let Kind::Text { text, font_px, color } = &obj.kind {
+            if let Kind::Text { text, font_px, color, frame } = &obj.kind {
                 // Keep the rect in sync with the text layout. Measured at a fixed scale (1 point
                 // per canvas pixel) so zooming doesn't change it.
-                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(*font_px), *color);
-                obj.rect = Rect::from_min_size(obj.rect.min, galley.size().max(Vec2::splat(MIN_SIZE)));
+                let galley = layout_text(&painter, text, *font_px, *color, *frame);
+                let mut size = galley.size().max(Vec2::splat(MIN_SIZE));
+                if let Some(frame) = frame {
+                    size = Vec2::new(frame.size.x, frame.size.y.max(size.y));
+                }
+                obj.rect = Rect::from_min_size(obj.rect.min, size);
             }
             if let Kind::Arrow { start, end, .. } = obj.kind {
                 obj.rect = Rect::from_two_pos(start, end);
@@ -492,6 +528,10 @@ impl DeerawApp {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
                 let head = self.tool == Tool::Arrow;
                 paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, head);
+            }
+            Some(Drawing::TextBox(a, b)) => {
+                let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
+                painter.rect_stroke(rect, 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
             }
             None => {}
         }
@@ -652,14 +692,24 @@ impl DeerawApp {
                 (kind, size.unwrap_or(*self.style.size_mut(kind)))
             })
             .collect();
-        if let Some(StyleSection::Size(kind)) = self.style_open
-            && !size_kinds.contains(&kind)
-        {
-            self.style_open = None;
+        let show_align = match self.tool {
+            Tool::Text => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].align_mut().is_some()),
+            _ => false,
+        };
+        let align = targets
+            .iter()
+            .find_map(|&i| self.objects[i].align_mut().map(|a| *a))
+            .unwrap_or(self.style.align);
+        match self.style_open {
+            Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
+            Some(StyleSection::Align) if !show_align => self.style_open = None,
+            _ => {}
         }
 
         let mut new_color = None;
         let mut new_size = None;
+        let mut new_align = None;
         egui::Area::new(egui::Id::unique("style"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
@@ -688,6 +738,20 @@ impl DeerawApp {
                                         }
                                     }
                                 }
+                                StyleSection::Align => {
+                                    ui.vertical(|ui| {
+                                        for y in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                            ui.horizontal(|ui| {
+                                                for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                                    let option = Align2([x, y]);
+                                                    if align_button(ui, align == option, option) {
+                                                        new_align = Some(option);
+                                                    }
+                                                }
+                                            });
+                                        }
+                                    });
+                                }
                             });
                         });
                     }
@@ -698,12 +762,15 @@ impl DeerawApp {
                             for &(kind, size) in &sizes {
                                 self.style_toggle(StyleSection::Size(kind), |open| size_button(ui, open, kind, size));
                             }
+                            if show_align {
+                                self.style_toggle(StyleSection::Align, |open| align_button(ui, open, align));
+                            }
                         });
                     });
                 });
             });
 
-        if new_color.is_none() && new_size.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() {
             return;
         }
         self.style_open = None;
@@ -712,6 +779,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(c) = self.objects[i].color_mut() {
                     *c = color;
+                }
+            }
+        }
+        if let Some(align) = new_align {
+            self.style.align = align;
+            for &i in &targets {
+                if let Some(a) = self.objects[i].align_mut() {
+                    *a = align;
                 }
             }
         }
@@ -816,7 +891,7 @@ impl DeerawApp {
                                 points.push(p);
                             }
                         }
-                        Some(Drawing::Arrow(_, end)) => *end = p,
+                        Some(Drawing::Arrow(_, end) | Drawing::TextBox(_, end)) => *end = p,
                         None => {}
                     }
                 }
@@ -825,16 +900,35 @@ impl DeerawApp {
                 }
             }
             Tool::Text => {
+                // Click: single-line text centered vertically on the click.
                 if let (true, Some(p)) = (background.clicked(), pointer) {
-                    let Style { font_px, color, .. } = self.style;
-                    let rect = Rect::from_min_size(p - Vec2::new(0.0, font_px / 2.0), Vec2::splat(MIN_SIZE));
-                    let id = self.add(rect, Kind::Text { text: String::new(), font_px, color });
-                    self.editing = Some(id);
-                    self.focus_editor = true;
-                    self.tool = Tool::Select;
+                    self.start_text(p - Vec2::new(0.0, self.style.font_px / 2.0), None);
+                }
+                // Drag: a box whose width the text wraps at.
+                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
+                    self.drawing = Some(Drawing::TextBox(p, p));
+                }
+                if let (true, Some(p), Some(Drawing::TextBox(_, end))) =
+                    (background.dragged_by(PointerButton::Primary), pointer, &mut self.drawing)
+                {
+                    *end = p;
+                }
+                if background.drag_stopped() {
+                    self.finish_drawing();
                 }
             }
         }
+    }
+
+    /// Adds an empty text object (at `min`, or as the box `frame`) and starts editing it.
+    fn start_text(&mut self, min: Pos2, frame: Option<Vec2>) {
+        let Style { font_px, color, align, .. } = self.style;
+        let rect = Rect::from_min_size(min, frame.unwrap_or(Vec2::splat(MIN_SIZE)));
+        let frame = frame.map(|size| TextFrame { size, align });
+        let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, frame });
+        self.editing = Some(id);
+        self.focus_editor = true;
+        self.tool = Tool::Select;
     }
 
     fn finish_drawing(&mut self) {
@@ -848,6 +942,15 @@ impl DeerawApp {
                 let Style { color, line_width: width, .. } = self.style;
                 let head = self.tool == Tool::Arrow;
                 self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, head });
+            }
+            Some(Drawing::TextBox(a, b)) => {
+                let rect = Rect::from_two_pos(a, b);
+                // Too narrow to be deliberate: treat it as a click.
+                if rect.width() < MIN_TEXT_BOX {
+                    self.start_text(a - Vec2::new(0.0, self.style.font_px / 2.0), None);
+                } else {
+                    self.start_text(rect.min, Some(rect.size().max(Vec2::splat(MIN_TEXT_BOX))));
+                }
             }
             _ => {}
         }
@@ -899,14 +1002,15 @@ impl DeerawApp {
         painter.rect_stroke(rect, 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Outside);
 
         let is_text = matches!(obj.kind, Kind::Text { .. });
+        let boxed = matches!(obj.kind, Kind::Text { frame: Some(_), .. });
         let from_center = ui.input(|i| i.modifiers.shift);
         // (x, y) direction of each handle: -1 = min edge, 1 = max edge, 0 = that axis is fixed.
         for (dx, dy) in [
             (-1, -1), (1, -1), (-1, 1), (1, 1), // corners: both axes, keep aspect ratio
             (0, -1), (0, 1), (-1, 0), (1, 0),   // edges: one axis
         ] {
-            // Text can't be stretched, only scaled.
-            if is_text && (dx == 0 || dy == 0) {
+            // Plain text can't be stretched, only scaled.
+            if is_text && !boxed && (dx == 0 || dy == 0) {
                 continue;
             }
             let center = Pos2::new(
@@ -919,20 +1023,26 @@ impl DeerawApp {
             let pointer = response.interact_pointer_pos().map(&to_canvas);
             if let (true, Some(p)) = (response.drag_started_by(PointerButton::Primary), pointer) {
                 let handle_pos = obj.rect.lerp_inside(Vec2::new(dx as f32 + 1.0, dy as f32 + 1.0) / 2.0);
-                self.resize_drag = Some(ResizeDrag { start: obj.rect, grab_offset: p - handle_pos });
+                let start_font_px = match obj.kind {
+                    Kind::Text { font_px, .. } => font_px,
+                    _ => 0.0,
+                };
+                self.resize_drag = Some(ResizeDrag { start: obj.rect, grab_offset: p - handle_pos, start_font_px });
             }
             if let (true, Some(p), Some(drag)) =
                 (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
             {
-                // Text has no fixed aspect: it keeps whatever the layout gives it.
+                // Plain text keeps whatever aspect the layout gives it; text boxes resize freely.
                 let aspect = match obj.kind {
-                    Kind::Text { .. } => drag.start.aspect_ratio(),
-                    _ => obj.aspect,
+                    Kind::Text { frame: Some(_), .. } => None,
+                    Kind::Text { .. } => Some(drag.start.aspect_ratio()),
+                    _ => Some(obj.aspect),
                 };
-                let old_height = obj.rect.height();
                 obj.rect = resize_to(drag.start, dx, dy, p - drag.grab_offset, aspect, from_center);
-                if let Kind::Text { font_px, .. } = &mut obj.kind {
-                    *font_px *= obj.rect.height() / old_height;
+                match &mut obj.kind {
+                    Kind::Text { frame: Some(frame), .. } => frame.size = obj.rect.size().max(Vec2::splat(MIN_TEXT_BOX)),
+                    Kind::Text { font_px, .. } => *font_px = drag.start_font_px * obj.rect.height() / drag.start.height(),
+                    _ => {}
                 }
             }
             if response.drag_stopped() {
@@ -958,11 +1068,29 @@ impl DeerawApp {
             self.editing = None;
             return;
         };
-        let Kind::Text { text, font_px, color } = &mut obj.kind else {
+        let Kind::Text { text, font_px, color, frame } = &mut obj.kind else {
             self.editing = None;
             return;
         };
         let font = FontId::proportional(*font_px * scale);
+        // Lay out exactly like `layout_text` (egui would otherwise wrap at the available width).
+        let screen_frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
+        let color = *color;
+        let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _: f32| {
+            let mut job = text_layout_job(buf.as_str(), font.clone(), color, screen_frame);
+            job.keep_trailing_whitespace = true;
+            ui.fonts_mut(|f| f.layout_job(job))
+        };
+        // A text box's editor fills the box, with the text aligned in it like when painted.
+        let (box_size, align) = match screen_frame {
+            Some(f) => (obj.rect.size() * scale, f.align),
+            None => (Vec2::splat(1.0), Align2::LEFT_TOP),
+        };
+        if screen_frame.is_some() {
+            let outline = Rect::from_min_size(to_screen_pos(obj.rect.min), box_size);
+            let stroke = Stroke::new(1.0, SELECTION_COLOR.gamma_multiply(0.5));
+            ui.painter().rect_stroke(outline, 0.0, stroke, StrokeKind::Outside);
+        }
         let output = egui::Area::new(egui::Id::unique(("text-editor", id)))
             .fixed_pos(to_screen_pos(obj.rect.min))
             .order(egui::Order::Foreground)
@@ -971,11 +1099,13 @@ impl DeerawApp {
                 // shows on every background.
                 ui.visuals_mut().text_cursor.stroke = Stroke::new(2.0, SELECTION_COLOR);
                 egui::TextEdit::multiline(text)
-                    .font(font)
-                    .text_color(*color)
+                    .font(font.clone())
+                    .layouter(&mut layouter)
                     .frame(egui::Frame::NONE)
                     .margin(egui::Margin::ZERO)
-                    .desired_width(1.0)
+                    .desired_width(box_size.x)
+                    .min_size(box_size)
+                    .align(align)
                     .desired_rows(1)
                     .clip_text(false)
                     .show(ui)
@@ -1179,11 +1309,53 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
             let stroke = Stroke::new(width * scale, *color);
             paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, *head);
         }
-        Kind::Text { text, font_px, color } => {
-            let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), *color);
-            painter.galley(rect.min, galley, *color);
+        Kind::Text { text, font_px, color, frame } => {
+            let frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
+            let galley = layout_text(painter, text, font_px * scale, *color, frame);
+            // Same placement as `TextEdit` uses, so editing doesn't shift the text.
+            let align = frame.map_or(Align2::LEFT_TOP, |f| f.align);
+            let pos = align.align_size_within_rect(galley.size(), rect).min - Vec2::new(galley.rect.left(), 0.0);
+            painter.galley(pos, galley, *color);
         }
     }
+}
+
+/// Lays out a text object's text. `font_px` and `frame` are in the same unit (canvas pixels
+/// for measuring, screen points for painting).
+fn layout_text(painter: &Painter, text: &str, font_px: f32, color: Color32, frame: Option<TextFrame>) -> Arc<egui::Galley> {
+    painter.layout_job(text_layout_job(text, FontId::proportional(font_px), color, frame))
+}
+
+/// Plain text doesn't wrap; a text box wraps at its width with its rows aligned horizontally.
+fn text_layout_job(text: &str, font: FontId, color: Color32, frame: Option<TextFrame>) -> egui::text::LayoutJob {
+    let wrap = frame.map_or(f32::INFINITY, |f| f.size.x);
+    let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, wrap);
+    if let Some(frame) = frame {
+        job.halign = frame.align.x();
+    }
+    job
+}
+
+/// E.g. "top left", "center".
+fn align_name(align: Align2) -> String {
+    let v = ["top", "middle", "bottom"][align.y() as usize];
+    let h = ["left", "center", "right"][align.x() as usize];
+    match (v, h) {
+        ("middle", "center") => "center".to_owned(),
+        _ => format!("{v} {h}"),
+    }
+}
+
+/// A selectable alignment button: a box with a small block where the text sits.
+fn align_button(ui: &mut egui::Ui, selected: bool, align: Align2) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
+    let response = ui.add(button).on_hover_text(format!("Align {}", align_name(align)));
+    let frame = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    let color = ui.visuals().text_color();
+    ui.painter().rect_stroke(frame, 1.0, Stroke::new(1.0, color.gamma_multiply(0.5)), StrokeKind::Inside);
+    let block = align.align_size_within_rect(Vec2::new(8.0, 4.0), frame.shrink(2.0));
+    ui.painter().rect_filled(block, 0.0, color);
+    response.clicked()
 }
 
 /// Draws a line from `start` to `end` (screen points), with a head at `end` if `head`; the head
@@ -1230,9 +1402,9 @@ fn normalize(points: &[Pos2]) -> (Rect, Vec<Pos2>) {
 
 /// Resizes `start` so the handle at direction (`dx`, `dy`) lands on `target` (canvas pixels).
 /// -1 = min edge, 1 = max edge, 0 = that axis is untouched. Corner handles fit the size to
-/// `aspect`, letting the axis the cursor pulled further win. With `from_center` the center
+/// `aspect` (if given; otherwise both axes follow the cursor), letting the axis the cursor pulled further win. With `from_center` the center
 /// stays put; otherwise the opposite side does. Never shrinks below `MIN_SIZE`.
-fn resize_to(start: Rect, dx: i32, dy: i32, target: Pos2, aspect: f32, from_center: bool) -> Rect {
+fn resize_to(start: Rect, dx: i32, dy: i32, target: Pos2, aspect: Option<f32>, from_center: bool) -> Rect {
     let dir = Vec2::new(dx as f32, dy as f32);
     let anchor = if from_center {
         start.center()
@@ -1248,7 +1420,7 @@ fn resize_to(start: Rect, dx: i32, dy: i32, target: Pos2, aspect: f32, from_cent
     if dy != 0 {
         size.y = reach.y.max(MIN_SIZE);
     }
-    if dx != 0 && dy != 0 {
+    if let (true, Some(aspect)) = (dx != 0 && dy != 0, aspect) {
         if size.x / size.y > aspect {
             size.y = size.x / aspect;
         } else {
@@ -1271,44 +1443,44 @@ mod tests {
 
     #[test]
     fn corner_follows_cursor_keeping_aspect() {
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 1, Pos2::new(400.0, 150.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 1, Pos2::new(400.0, 150.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, 0.0, 400.0, 200.0));
 
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), -1, -1, Pos2::new(100.0, 0.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), -1, -1, Pos2::new(100.0, 0.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, 0.0, 200.0, 100.0));
 
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), -1, -1, Pos2::new(100.0, 80.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), -1, -1, Pos2::new(100.0, 80.0), Some(2.0), false);
         assert_eq!(r, rect(100.0, 50.0, 200.0, 100.0));
     }
 
     #[test]
     fn corner_restores_original_aspect() {
         // Stretched to 3:1 with an edge handle; the corner snaps back to 2:1.
-        let r = resize_to(rect(0.0, 0.0, 300.0, 100.0), 1, 1, Pos2::new(300.0, 100.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 300.0, 100.0), 1, 1, Pos2::new(300.0, 100.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, 0.0, 300.0, 150.0));
     }
 
     #[test]
     fn corner_respects_min_size() {
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, -1, Pos2::new(-1000.0, 1000.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, -1, Pos2::new(-1000.0, 1000.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, 96.0, 8.0, 100.0));
     }
 
     #[test]
     fn edge_follows_cursor_on_one_axis() {
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 0, Pos2::new(250.0, 999.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 0, Pos2::new(250.0, 999.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, 0.0, 250.0, 100.0));
 
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(999.0, -20.0), 2.0, false);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(999.0, -20.0), Some(2.0), false);
         assert_eq!(r, rect(0.0, -20.0, 200.0, 100.0));
     }
 
     #[test]
     fn from_center_keeps_center() {
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 1, Pos2::new(300.0, 150.0), 2.0, true);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 1, 1, Pos2::new(300.0, 150.0), Some(2.0), true);
         assert_eq!(r, rect(-100.0, -50.0, 300.0, 150.0));
 
-        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(0.0, 10.0), 2.0, true);
+        let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(0.0, 10.0), Some(2.0), true);
         assert_eq!(r, rect(0.0, 10.0, 200.0, 90.0));
     }
 

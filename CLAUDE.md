@@ -49,9 +49,12 @@ Keep this list up to date as features are built.
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
    - Line: like Arrow but without a head (same object kind, `head: false`); stays in Line mode.
-   - Text: click to place a text box and type (multi-line). Escape or clicking elsewhere finishes;
-     empty text is discarded. Double-click a text object to edit it. Text has only corner handles
-     (resizing scales the font). Switches back to Select afterwards.
+   - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
+     handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
+     lines break at the box width and the text is aligned inside it (9 alignments, picked in the
+     style panel); the box grows taller if the text overflows. All 8 handles resize the box freely
+     and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
+     Double-click a text object to edit it. Switches back to Select afterwards.
 5. **Pan & zoom** — middle-button drag pans. Mouse wheel zooms around the cursor; Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
    Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%. Copy captures at the
@@ -67,7 +70,8 @@ Keep this list up to date as features are built.
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards (picking one collapses it again). Colors: black, white,
    red, orange, green, blue. Size: line width (2/3/6/10px, for pencil and arrows) or font size
-   (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px).
+   (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
+   also get an alignment button with a 3×3 grid).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
    selected object that has that setting (undoable) and also becomes the default. A mixed
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width.
