@@ -34,15 +34,30 @@ impl DeerawApp {
         if self.editing == Some(obj.id) {
             return;
         }
-        if let Kind::Arrow { start, end, .. } = &mut obj.kind {
-            // Arrows get a handle per endpoint instead of a resize box.
-            for (i, point) in [start, end].into_iter().enumerate() {
+        if let Kind::Arrow { start, end, mut bindings, .. } = obj.kind {
+            // Arrows get a handle per endpoint instead of a resize box. A dragged endpoint
+            // snaps to a nearby text or image side and attaches to it, or detaches.
+            let arrow = obj.id;
+            let mut points = [start, end];
+            let mut dragging = None;
+            for (i, point) in points.iter_mut().enumerate() {
                 let center = to_screen_pos(*point);
-                let id = egui::Id::unique(("point-handle", obj.id, i));
+                let id = egui::Id::unique(("point-handle", arrow, i));
                 let hit = Rect::from_center_size(center, Vec2::splat(POINT_HANDLE_RADIUS * 2.0 + 4.0));
                 let response = ui.interact(hit, id, Sense::drag());
-                if response.dragged_by(PointerButton::Primary) {
-                    *point += response.drag_delta() / scale;
+                if response.drag_started_by(PointerButton::Primary) {
+                    self.point_drag = Some(*point);
+                }
+                if let (true, Some(raw)) = (response.dragged_by(PointerButton::Primary), &mut self.point_drag) {
+                    *raw += response.drag_delta() / scale;
+                    let raw = *raw;
+                    let snap = self.snap(to_screen_pos(raw), &to_screen_pos);
+                    *point = snap.map_or(raw, |(_, anchor)| anchor);
+                    bindings[i] = snap.map(|(b, _)| b);
+                    dragging = Some(to_screen_pos(raw));
+                }
+                if response.drag_stopped() {
+                    self.point_drag = None;
                 }
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(CursorIcon::Grab);
@@ -50,6 +65,15 @@ impl DeerawApp {
                 let painter = ui.painter();
                 painter.circle_filled(center, POINT_HANDLE_RADIUS, Color32::WHITE);
                 painter.circle_stroke(center, POINT_HANDLE_RADIUS, Stroke::new(1.5, SELECTION_COLOR));
+            }
+            if let Some(pointer) = dragging {
+                self.paint_snap_circles(ui.painter(), Some(pointer), &bindings, &to_screen_pos);
+                if let Some(Object { kind: Kind::Arrow { start, end, bindings: b, .. }, .. }) =
+                    self.objects.iter_mut().find(|o| o.id == arrow)
+                {
+                    [*start, *end] = points;
+                    *b = bindings;
+                }
             }
             return;
         }

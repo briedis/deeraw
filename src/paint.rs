@@ -26,7 +26,7 @@ pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: 
                 painter.line(points, Stroke::new(width * scale, *color));
             }
         }
-        Kind::Arrow { start, end, color, width, head } => {
+        Kind::Arrow { start, end, color, width, head, .. } => {
             let stroke = Stroke::new(width * scale, *color);
             paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, *head);
         }

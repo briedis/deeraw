@@ -51,7 +51,14 @@ impl DeerawApp {
                             info += &format!(", box {}", align_name(frame.align));
                         }
                     }
-                    Kind::Arrow { width, .. } => info += &format!("\nwidth {width:.0}px"),
+                    Kind::Arrow { width, bindings, .. } => {
+                        info += &format!("\nwidth {width:.0}px");
+                        for (end, binding) in ["start", "end"].iter().zip(bindings) {
+                            if let Some(b) = binding {
+                                info += &format!(", {end} on #{} {:?}", b.id, b.side);
+                            }
+                        }
+                    }
                 }
                 ui.weak(info);
             }

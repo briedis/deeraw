@@ -1,0 +1,166 @@
+//! Attaching arrow endpoints to the sides of text and image objects.
+
+use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
+
+use super::{DeerawApp, SELECTION_COLOR};
+use crate::object::{Binding, Kind, Side, anchor};
+
+/// An object's snap circles show while the pointer is this close to its border, in points.
+const SHOW_DISTANCE: f32 = 40.0;
+/// An endpoint snaps to a circle this close to the pointer, in points.
+const SNAP_DISTANCE: f32 = 12.0;
+/// Radius of a snap circle, in points.
+const CIRCLE_RADIUS: f32 = 4.0;
+/// Radius of the circle an endpoint is snapped to, in points.
+const ACTIVE_RADIUS: f32 = 6.0;
+
+impl DeerawApp {
+    /// The anchor closest to `pointer` (screen) within `SNAP_DISTANCE`: what an endpoint there
+    /// attaches to, and where it goes (canvas pixels).
+    pub(super) fn snap(&self, pointer: Pos2, to_screen_pos: impl Fn(Pos2) -> Pos2) -> Option<(Binding, Pos2)> {
+        self.objects
+            .iter()
+            .filter(|o| o.bindable())
+            .flat_map(|o| Side::ALL.map(|side| (Binding { id: o.id, side }, anchor(o.rect, side))))
+            .map(|(binding, p)| (binding, p, to_screen_pos(p).distance(pointer)))
+            .filter(|(.., distance)| *distance <= SNAP_DISTANCE)
+            .min_by(|a, b| a.2.total_cmp(&b.2))
+            .map(|(binding, p, _)| (binding, p))
+    }
+
+    /// Snap circles on the objects near `pointer` (screen) and on those in `active`, which are
+    /// what the endpoints being drawn or dragged are attached to; those circles are filled.
+    pub(super) fn paint_snap_circles(
+        &self,
+        painter: &Painter,
+        pointer: Option<Pos2>,
+        active: &[Option<Binding>],
+        to_screen_pos: impl Fn(Pos2) -> Pos2,
+    ) {
+        for obj in self.objects.iter().filter(|o| o.bindable()) {
+            let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
+            let near = pointer.is_some_and(|p| rect.signed_distance_to_pos(p).abs() <= SHOW_DISTANCE);
+            let attached = active.iter().flatten().any(|b| b.id == obj.id);
+            if !near && !attached {
+                continue;
+            }
+            for side in Side::ALL {
+                let center = to_screen_pos(anchor(obj.rect, side));
+                if active.contains(&Some(Binding { id: obj.id, side })) {
+                    painter.circle_filled(center, ACTIVE_RADIUS, SELECTION_COLOR);
+                } else {
+                    painter.circle_filled(center, CIRCLE_RADIUS, Color32::WHITE);
+                    painter.circle_stroke(center, CIRCLE_RADIUS, Stroke::new(1.5, SELECTION_COLOR));
+                }
+            }
+        }
+    }
+
+    /// Moves attached arrow endpoints to their objects' anchors. Endpoints whose object is
+    /// gone stay where they are.
+    pub(super) fn follow_bindings(&mut self) {
+        for i in 0..self.objects.len() {
+            let Kind::Arrow { bindings, .. } = self.objects[i].kind else { continue };
+            let anchors = bindings.map(|binding| {
+                let binding = binding?;
+                let target = self.objects.iter().find(|o| o.id == binding.id)?;
+                Some(anchor(target.rect, binding.side))
+            });
+            let obj = &mut self.objects[i];
+            if let Kind::Arrow { start, end, .. } = &mut obj.kind {
+                *start = anchors[0].unwrap_or(*start);
+                *end = anchors[1].unwrap_or(*end);
+                obj.rect = Rect::from_two_pos(*start, *end);
+            }
+        }
+    }
+
+    /// Detaches the selected arrows from objects that aren't selected too, so they can be
+    /// moved on their own.
+    pub(super) fn detach_selected(&mut self) {
+        for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
+            if let Kind::Arrow { bindings, .. } = &mut obj.kind {
+                for binding in bindings {
+                    if binding.is_some_and(|b| !self.selected.contains(&b.id)) {
+                        *binding = None;
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use eframe::egui::{Color32, Vec2};
+
+    use super::*;
+    use crate::object::Object;
+
+    fn app_with_arrow_on_text() -> DeerawApp {
+        let mut app = DeerawApp::default();
+        let rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(50.0, 20.0));
+        let text = Kind::Text { text: "hi".into(), font_px: 16.0, color: Color32::BLACK, frame: None };
+        let target = app.add(rect, text);
+        let end = anchor(rect, Side::Left);
+        let binding = Binding { id: target, side: Side::Left };
+        let kind = Kind::Arrow { start: Pos2::ZERO, end, color: Color32::BLACK, width: 2.0, head: true, bindings: [None, Some(binding)] };
+        app.add(Rect::from_two_pos(Pos2::ZERO, end), kind);
+        app
+    }
+
+    fn arrow(app: &DeerawApp) -> &Object {
+        app.objects.iter().find(|o| matches!(o.kind, Kind::Arrow { .. })).unwrap()
+    }
+
+    #[test]
+    fn attached_end_follows_its_object() {
+        let mut app = app_with_arrow_on_text();
+        app.objects[0].translate(Vec2::new(10.0, 5.0));
+        app.follow_bindings();
+        let Kind::Arrow { start, end, .. } = arrow(&app).kind else { unreachable!() };
+        assert_eq!(start, Pos2::ZERO);
+        assert_eq!(end, anchor(app.objects[0].rect, Side::Left));
+    }
+
+    #[test]
+    fn moving_an_arrow_alone_detaches_it() {
+        let mut app = app_with_arrow_on_text();
+        app.selected = vec![arrow(&app).id];
+        app.detach_selected();
+        assert!(matches!(arrow(&app).kind, Kind::Arrow { bindings: [None, None], .. }));
+    }
+
+    #[test]
+    fn moving_an_arrow_with_its_object_keeps_it_attached() {
+        let mut app = app_with_arrow_on_text();
+        app.select_all();
+        app.detach_selected();
+        assert!(matches!(arrow(&app).kind, Kind::Arrow { bindings: [None, Some(_)], .. }));
+    }
+
+    #[test]
+    fn duplicates_attach_to_duplicated_objects_only() {
+        let mut app = app_with_arrow_on_text();
+        app.selected = vec![arrow(&app).id];
+        app.duplicate_selected();
+        let copy = app.objects.last().unwrap();
+        assert!(matches!(copy.kind, Kind::Arrow { bindings: [None, None], .. }));
+
+        app.select_all();
+        app.duplicate_selected();
+        let (text_copy, arrow_copy) = (&app.objects[3], &app.objects[4]);
+        let Kind::Arrow { bindings: [_, Some(binding)], .. } = arrow_copy.kind else { panic!("copy detached") };
+        assert_eq!(binding.id, text_copy.id);
+    }
+
+    #[test]
+    fn snaps_to_the_nearest_anchor_in_range() {
+        let app = app_with_arrow_on_text();
+        let target = app.objects[0].rect;
+        let top = anchor(target, Side::Top);
+        let snapped = app.snap(top + Vec2::new(3.0, -2.0), |p| p);
+        assert_eq!(snapped.map(|(b, p)| (b.side, p)), Some((Side::Top, top)));
+        assert!(app.snap(top + Vec2::new(0.0, -SNAP_DISTANCE - 1.0), |p| p).is_none());
+    }
+}

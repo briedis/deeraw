@@ -109,7 +109,7 @@ impl DeerawApp {
         // bottom to top, then the selected object's handles.
         let background =
             ui.interact(canvas_rect, egui::Id::unique("canvas"), Sense::click_and_drag());
-        self.handle_tool(&background, to_canvas);
+        self.handle_tool(&background, to_canvas, to_screen_pos);
 
         let painter = ui.painter().clone();
         if self.background == Background::Transparent {
@@ -183,10 +183,12 @@ impl DeerawApp {
             self.click_select(id, ctrl);
         }
         if move_by != Vec2::ZERO {
+            self.detach_selected();
             for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
                 obj.translate(move_by);
             }
         }
+        self.follow_bindings();
         for obj in &self.objects {
             if self.editing != Some(obj.id) {
                 paint_object(&painter, obj, to_screen(obj.rect), to_screen_pos, scale);
@@ -210,10 +212,11 @@ impl DeerawApp {
                     painter.line(screen, Stroke::new(width, color));
                 }
             }
-            Some(Drawing::Arrow(start, end)) => {
+            Some(Drawing::Arrow(start, end, bindings)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
                 let head = self.tool == Tool::Arrow;
                 paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, head);
+                self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), bindings, to_screen_pos);
             }
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
@@ -241,6 +244,8 @@ impl DeerawApp {
             && self.cropping.is_none()
             && self.drawing.is_none();
         if settled {
+            // Resizing (after painting) moved objects this frame; their arrows go in the same undo step.
+            self.follow_bindings();
             self.history.record(&self.objects);
         }
     }
@@ -314,7 +319,12 @@ impl DeerawApp {
     }
 
     /// What a click or drag on empty canvas does with the current tool.
-    pub(super) fn handle_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
+    pub(super) fn handle_tool(
+        &mut self,
+        background: &egui::Response,
+        to_canvas: impl Fn(Pos2) -> Pos2,
+        to_screen_pos: impl Fn(Pos2) -> Pos2,
+    ) {
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         // The cursor image is sticky between frames, so it must be cleared explicitly.
         let cursor = match self.tool {
@@ -382,13 +392,21 @@ impl DeerawApp {
                 }
             }
             Tool::Arrow | Tool::Line => {
+                // Either end snaps to a nearby text or image side and attaches to it.
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
-                    self.drawing = Some(Drawing::Arrow(p, p));
+                    let origin = background.ctx.input(|i| i.pointer.press_origin());
+                    let snap = origin.and_then(|o| self.snap(o, &to_screen_pos));
+                    let start = snap.map_or(p, |(_, anchor)| anchor);
+                    self.drawing = Some(Drawing::Arrow(start, start, [snap.map(|(b, _)| b), None]));
                 }
-                if let (true, Some(p), Some(Drawing::Arrow(_, end))) =
-                    (background.dragged_by(PointerButton::Primary), pointer, &mut self.drawing)
+                if let (true, Some(p), Some(screen)) =
+                    (background.dragged_by(PointerButton::Primary), pointer, background.interact_pointer_pos())
                 {
-                    *end = p;
+                    let snap = self.snap(screen, &to_screen_pos);
+                    if let Some(Drawing::Arrow(_, end, bindings)) = &mut self.drawing {
+                        *end = snap.map_or(p, |(_, anchor)| anchor);
+                        bindings[1] = snap.map(|(b, _)| b);
+                    }
                 }
                 if background.drag_stopped() {
                     self.finish_drawing();
@@ -434,10 +452,10 @@ impl DeerawApp {
                 let Style { color, line_width: width, hand_drawn, .. } = self.style;
                 self.add(rect, Kind::Stroke { points, pressures, color, width, hand_drawn });
             }
-            Some(Drawing::Arrow(start, end)) if start.distance(end) >= MIN_SIZE => {
+            Some(Drawing::Arrow(start, end, bindings)) if start.distance(end) >= MIN_SIZE => {
                 let Style { color, line_width: width, .. } = self.style;
                 let head = self.tool == Tool::Arrow;
-                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, head });
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, head, bindings });
             }
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);

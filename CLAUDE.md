@@ -65,6 +65,14 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
+     **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
+     border is within 40pt of the pointer show a circle 8px outside each side's center (`anchor`);
+     an end within 12pt of a circle snaps to it (filled circle) and attaches (`bindings: [start, end]`,
+     a `Binding { id, side }` each). Attached ends follow their object every frame (`follow_bindings`,
+     also run just before recording undo so both land in one step). Dragging an endpoint away
+     detaches it; moving an arrow without its object detaches it (`detach_selected`); Ctrl+D copies
+     re-attach to copied objects or detach. Deleting the object leaves the arrow (its binding dangles
+     harmlessly; ids are never reused, and undo re-attaches it).
    - Line: like Arrow but without a head (same object kind, `head: false`); stays in Line mode.
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
@@ -120,13 +128,13 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `export.rs`
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
-  text editing), `app/selection.rs` (handles, crop), `app/panels.rs` (layers, toolbar, style panel, corner
+  text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/panels.rs` (layers, toolbar, style panel, corner
   controls), `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
-  geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection and PNG writing.
+  geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping and PNG writing.
 - App icon: `assets/deer.svg` is the source (dark variant: #242424 rounded square, white deer drawn as
   round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow) renders it
   to `assets/icon.ico` (16–256px), embedded in the exe by `build.rs` (winresource, needs the Windows

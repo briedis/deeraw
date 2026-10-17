@@ -24,8 +24,9 @@ pub enum Kind {
     /// used when `hand_drawn`: then the stroke is smoothed and its width varies.
     Stroke { points: Vec<Pos2>, pressures: Vec<f32>, color: Color32, width: f32, hand_drawn: bool },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
-    /// Without `head` it's a plain line (Line tool).
-    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, head: bool },
+    /// Without `head` it's a plain line (Line tool). `bindings` (start, end) attach an endpoint
+    /// to a side of a text or image object, which it then follows.
+    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, head: bool, bindings: [Option<Binding>; 2] },
     /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
     /// Enter and resizing scales `font_px`. With `frame` (drag a box), see `TextFrame`.
     Text { text: String, font_px: f32, color: Color32, frame: Option<TextFrame> },
@@ -42,7 +43,50 @@ pub struct TextFrame {
     pub fill: Option<Color32>,
 }
 
+/// A side of an object's rect.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Side {
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+impl Side {
+    pub const ALL: [Side; 4] = [Side::Left, Side::Right, Side::Top, Side::Bottom];
+
+    fn outward(self) -> Vec2 {
+        match self {
+            Side::Left => -Vec2::X,
+            Side::Right => Vec2::X,
+            Side::Top => -Vec2::Y,
+            Side::Bottom => Vec2::Y,
+        }
+    }
+}
+
+/// An arrow endpoint attached to the side `side` of object `id`.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Binding {
+    pub id: u64,
+    pub side: Side,
+}
+
+/// How far outside a side's center an attached arrow ends, in canvas pixels.
+const ANCHOR_GAP: f32 = 8.0;
+
+/// Where an arrow attached to `side` of `rect` ends: just outside the side's center.
+pub fn anchor(rect: Rect, side: Side) -> Pos2 {
+    let outward = side.outward();
+    rect.center() + outward * (rect.size() / 2.0 + Vec2::splat(ANCHOR_GAP))
+}
+
 impl Object {
+    /// Text and images; arrows attach to them.
+    pub fn bindable(&self) -> bool {
+        matches!(self.kind, Kind::Image { .. } | Kind::Text { .. })
+    }
+
     pub fn translate(&mut self, delta: Vec2) {
         self.rect = self.rect.translate(delta);
         if let Kind::Arrow { start, end, .. } = &mut self.kind {
@@ -104,5 +148,19 @@ impl Object {
                 format!("Text #{id} \"{first}\"")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anchors_sit_outside_side_centers() {
+        let rect = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 40.0));
+        assert_eq!(anchor(rect, Side::Left), Pos2::new(-ANCHOR_GAP, 20.0));
+        assert_eq!(anchor(rect, Side::Right), Pos2::new(100.0 + ANCHOR_GAP, 20.0));
+        assert_eq!(anchor(rect, Side::Top), Pos2::new(50.0, -ANCHOR_GAP));
+        assert_eq!(anchor(rect, Side::Bottom), Pos2::new(50.0, 40.0 + ANCHOR_GAP));
     }
 }

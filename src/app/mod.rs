@@ -5,6 +5,7 @@ mod files;
 mod menu;
 mod panels;
 mod selection;
+mod snap;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -13,7 +14,7 @@ use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Vec2};
 
 use crate::export::Export;
 use crate::history::History;
-use crate::object::{Kind, Object};
+use crate::object::{Binding, Kind, Object};
 use crate::style::{Background, Style, StyleSection};
 
 const SELECTION_COLOR: Color32 = Color32::from_rgb(105, 101, 219);
@@ -51,7 +52,8 @@ struct ResizeDrag {
 enum Drawing {
     /// Points and when each was added (seconds), for the speed-based pressure.
     Stroke(Vec<Pos2>, Vec<f64>),
-    Arrow(Pos2, Pos2),
+    /// Start, end, and what each is attached to.
+    Arrow(Pos2, Pos2, [Option<Binding>; 2]),
     TextBox(Pos2, Pos2),
 }
 
@@ -68,6 +70,8 @@ pub struct DeerawApp {
     tool: Tool,
     drawing: Option<Drawing>,
     resize_drag: Option<ResizeDrag>,
+    /// Where the arrow endpoint being dragged would be without snapping, canvas pixels.
+    point_drag: Option<Pos2>,
     /// Image currently being cropped; see `crop_ui`.
     cropping: Option<u64>,
     /// Text object currently being edited.
@@ -145,14 +149,26 @@ impl DeerawApp {
         }
     }
 
-    /// Copies the selected objects on top, offset a little, and selects the copies.
+    /// Copies the selected objects on top, offset a little, and selects the copies. Copied
+    /// arrows attach to the copies of their objects, or detach if those weren't copied.
     fn duplicate_selected(&mut self) {
         let copies: Vec<Object> = self.objects.iter().filter(|o| self.selected.contains(&o.id)).cloned().collect();
+        // Copy i gets id `first_id + i`.
+        let first_id = self.next_id;
+        let originals: Vec<u64> = copies.iter().map(|o| o.id).collect();
         self.selected.clear();
         for mut copy in copies {
             copy.id = self.next_id;
             self.next_id += 1;
             copy.translate(Vec2::splat(DUPLICATE_OFFSET));
+            if let Kind::Arrow { bindings, .. } = &mut copy.kind {
+                for binding in bindings {
+                    *binding = binding.and_then(|b| {
+                        let i = originals.iter().position(|id| *id == b.id)?;
+                        Some(Binding { id: first_id + i as u64, ..b })
+                    });
+                }
+            }
             self.selected.push(copy.id);
             self.objects.push(copy);
         }
