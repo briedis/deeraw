@@ -98,7 +98,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      button, clicking elsewhere or switching tools finishes. Non-destructive: images store `uv`
      (the kept part of the texture, 0..1), so recropping can widen it again. After cropping,
      corner resizing keeps the cropped part's undistorted proportions. One undo step per crop session.
-5. **Pan & zoom** — middle-button drag pans. Mouse wheel zooms around the cursor; Ctrl +/- zoom
+5. **Pan & zoom** — middle-button drag pans, and so does left-drag while holding Space (not while
+   typing; open-hand cursor while held, closed hand while panning). A blocking widget over the canvas keeps that drag from objects
+   and tools. Mouse wheel zooms around the cursor; Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
    Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
@@ -176,7 +178,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
   toolbar icons visually.
 - Pencil/Arrow/Line use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
-  cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared.
+  cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared. Panning shows
+  pixel-art hands (`pixel_art_cursor`): on Windows `CursorIcon::Grab`/`Grabbing` are the four-way move arrows.
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
   must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
   product that competes with Deeraw. Source-available, not OSI open source.

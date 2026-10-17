@@ -22,6 +22,74 @@ pub fn i_beam_cursor() -> egui::CustomCursorImage {
     })
 }
 
+/// An open hand, shown while Space is held over the canvas (Windows has no stock hand cursor:
+/// `CursorIcon::Grab` shows the four-way move arrows).
+pub fn hand_cursor() -> egui::CustomCursorImage {
+    pixel_art_cursor(
+        [
+            "       ##       ",
+            "   ## #..###    ",
+            "  #..##..#..#   ",
+            "  #..##..#..# # ",
+            "   #..#..#..##.#",
+            "   #..#..#..#..#",
+            " ## #.......#..#",
+            "#..##..........#",
+            "#...#.........# ",
+            " #............# ",
+            "  #...........# ",
+            "  #..........#  ",
+            "   #.........#  ",
+            "    #........#  ",
+            "     #......#   ",
+            "     #......#   ",
+        ],
+        [8, 8],
+    )
+}
+
+/// A closed hand, shown while panning.
+pub fn grabbing_cursor() -> egui::CustomCursorImage {
+    pixel_art_cursor(
+        [
+            "                ",
+            "                ",
+            "                ",
+            "                ",
+            "    ## ## ##    ",
+            "   #..#..#..##  ",
+            "   #.........#.#",
+            "    #..........#",
+            "   ##..........#",
+            "  #............#",
+            "  #...........# ",
+            "   #..........# ",
+            "    #........#  ",
+            "     #.......#  ",
+            "     #......#   ",
+            "     #......#   ",
+        ],
+        [8, 8],
+    )
+}
+
+/// A cursor drawn as text: `#` black, `.` white, anything else transparent.
+fn pixel_art_cursor<const N: usize>(rows: [&str; N], hotspot: [u16; 2]) -> egui::CustomCursorImage {
+    let width = rows[0].len();
+    let mut rgba = Vec::with_capacity(width * N * 4);
+    for row in rows {
+        assert_eq!(row.len(), width, "cursor rows differ in width");
+        for c in row.chars() {
+            rgba.extend_from_slice(match c {
+                '#' => &[0, 0, 0, 255],
+                '.' => &[255, 255, 255, 255],
+                _ => &[0, 0, 0, 0],
+            });
+        }
+    }
+    egui::CustomCursorImage { rgba: rgba.into(), size: [width as u16, N as u16], hotspot }
+}
+
 /// A `size`×`size` cursor: black where `ink(x, y)`, with a 1px white outline around it so it
 /// shows on any background.
 pub fn outlined_cursor(size: usize, hotspot: [usize; 2], ink: impl Fn(usize, usize) -> bool) -> egui::CustomCursorImage {
@@ -42,5 +110,17 @@ pub fn outlined_cursor(size: usize, hotspot: [usize; 2], ink: impl Fn(usize, usi
         rgba: rgba.into(),
         size: [size as u16; 2],
         hotspot: hotspot.map(|v| v as u16),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hand_cursors_are_rectangular() {
+        for cursor in [hand_cursor(), grabbing_cursor()] {
+            assert_eq!(cursor.rgba.len(), cursor.size[0] as usize * cursor.size[1] as usize * 4);
+        }
     }
 }

@@ -107,11 +107,15 @@ pub struct DeerawApp {
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
     i_beam: Option<egui::CustomCursorImage>,
+    hand: Option<egui::CustomCursorImage>,
+    grabbing: Option<egui::CustomCursorImage>,
     /// See `zoom()`.
     zoom_level: i32,
     /// Screen offset (points) of the canvas origin from the canvas panel's top-left.
     pan: Vec2,
     panning: bool,
+    /// Space is held (not while typing): a left-drag pans instead of using the tool.
+    space_pan: bool,
     /// Wheel movement not yet turned into a whole zoom step.
     wheel: f32,
     background: Background,

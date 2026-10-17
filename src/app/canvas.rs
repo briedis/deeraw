@@ -3,7 +3,7 @@
 use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool};
-use crate::cursor::{crosshair_cursor, i_beam_cursor};
+use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
 use crate::geometry::{MIN_SIZE, distance_to_segment, normalize, pan_for_zoom};
 use crate::object::{Kind, TextFrame};
@@ -233,14 +233,20 @@ impl DeerawApp {
             self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
         }
         self.text_editor(ui, to_screen_pos, scale);
+        // Registered after the objects and handles, so a space-drag doesn't reach them.
+        if self.space_pan {
+            ui.interact(canvas_rect, egui::Id::unique("space-pan"), Sense::drag());
+        }
         let toolbar = self.toolbar(ui, canvas_rect);
         self.style_panel(ui, toolbar);
         self.corner_controls(ui, canvas_rect, ppp);
         self.update_title(ui.ctx());
         self.notice(ui, canvas_rect);
-        // Set last so it wins over hover cursors of whatever is under the pointer.
+        // Set last so it wins over the tool's cursor and hover cursors of whatever is under the pointer.
         if self.panning {
-            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            ui.ctx().set_cursor_image(Some(self.grabbing.get_or_insert_with(grabbing_cursor).clone()));
+        } else if self.space_pan && ui.rect_contains_pointer(canvas_rect) {
+            ui.ctx().set_cursor_image(Some(self.hand.get_or_insert_with(hand_cursor).clone()));
         }
 
         let settled = !ui.input(|i| i.pointer.any_down())
@@ -254,23 +260,32 @@ impl DeerawApp {
         }
     }
 
-    /// Middle-drag pans; the mouse wheel (around the cursor) and Ctrl +/- (around the canvas
+    /// Middle-drag, or left-drag while holding Space, pans; the mouse wheel (around the cursor) and Ctrl +/- (around the canvas
     /// center) zoom in 20% steps; Ctrl+0 resets to 100%.
     pub(super) fn navigate(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
-        let (hover, delta, middle_down, middle_pressed) = ui.input(|i| {
+        let (hover, delta, space, any_down, pan_down, pan_pressed) = ui.input(|i| {
             (
                 i.pointer.hover_pos(),
                 i.pointer.delta(),
-                i.pointer.middle_down(),
-                i.pointer.button_pressed(PointerButton::Middle),
+                i.key_down(egui::Key::Space),
+                i.pointer.any_down(),
+                i.pointer.middle_down() || i.pointer.primary_down(),
+                i.pointer.button_pressed(PointerButton::Middle)
+                    || (self.space_pan && i.pointer.button_pressed(PointerButton::Primary)),
             )
         });
         let over_canvas = hover.filter(|p| canvas_rect.contains(*p));
 
-        if middle_pressed && over_canvas.is_some() {
+        // Pressing Space mid-drag doesn't turn that drag into a pan.
+        if space && self.editing.is_none() && (!any_down || self.space_pan) {
+            self.space_pan = true;
+        } else if !space {
+            self.space_pan = false;
+        }
+        if pan_pressed && over_canvas.is_some() {
             self.panning = true;
         }
-        if !middle_down {
+        if !pan_down {
             self.panning = false;
         }
         if self.panning {
