@@ -1,6 +1,6 @@
 # Deeraw
 
-A Windows desktop drawing app in Rust, inspired by Excalidraw (hand-drawn style whiteboard).
+A desktop drawing app in Rust for Windows and macOS, inspired by Excalidraw (hand-drawn style whiteboard).
 
 ## Approach
 
@@ -8,20 +8,18 @@ Build **very incrementally**: one small, runnable step at a time. Each step shou
 
 ## Environment
 
-- Develop natively on Windows (not WSL). The project lives at `C:\dev\deeraw`.
+- Develop on Windows. The project lives at `C:\dev\deeraw`.
 - Toolchain: rustup with the MSVC target (`x86_64-pc-windows-msvc`), which needs the Visual Studio C++ Build Tools.
 - Build/run: `cargo run`. Release build: `cargo build --release` → `target\release\deeraw.exe`.
 
 ### First-time setup on a new machine
 
 1. Install Rust from https://rustup.rs and accept the prompt to install the Visual Studio C++ Build Tools.
-2. Open a new terminal, `cd C:\dev\deeraw`, run `cargo run`. Expected output: `Hello from Deeraw!`
-3. If git complains about "dubious ownership" (the repo was created from WSL), run:
-   `git config --global --add safe.directory C:/dev/deeraw`
+2. Open a new terminal, `cd C:\dev\deeraw`, run `cargo run`. The Deeraw window opens.
 
 ## Features
 
-Keep this list up to date as features are built.
+Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui's `Modifiers::COMMAND`).
 
 1. **Image canvas** — white canvas (1024×768 window).
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
@@ -99,7 +97,7 @@ Keep this list up to date as features are built.
    either expands its options upwards (picking one collapses it again). Colors: black, white,
    red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Size: line width (2/3/6/10px, for pencil and arrows) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
-   also get an alignment button with a 3×3 grid).
+   also get an alignment button (3×3 grid) and a background button (transparent or a palette color).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
    selected object that has that setting (undoable) and also becomes the default. A mixed
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width.
@@ -113,7 +111,7 @@ Keep this list up to date as features are built.
    - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
    - Help: About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
-     (`authors`), read with `env!`. Escape or × closes it It also links the license.
+     (`authors`), read with `env!`. Escape or × closes it. It also links the license.
 
 ## Current state
 
@@ -128,9 +126,9 @@ Keep this list up to date as features are built.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
-  resize math (`resize_to`).
+  geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection and PNG writing.
 - App icon: `assets/deer.svg` is the source (dark variant: #242424 rounded square, white deer drawn as
-  round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow, run from WSL) renders it
+  round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow) renders it
   to `assets/icon.ico` (16–256px), embedded in the exe by `build.rs` (winresource, needs the Windows
   SDK's rc.exe), and `assets/icon.png` (256px), the window/taskbar icon (`with_icon`).
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
@@ -161,7 +159,6 @@ Keep this list up to date as features are built.
   toolbar icons visually.
 - Pencil/Arrow/Line use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
   cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared.
-- From WSL, run Windows cargo via `powershell.exe` (`$env:USERPROFILE\.cargo\bin\cargo.exe`).
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
   must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
   product that competes with Deeraw. Source-available, not OSI open source.
@@ -173,10 +170,9 @@ Keep this list up to date as features are built.
 
 Ideas, not commitments (eframe/egui was chosen for quick setup, easy mouse input and 2D painting):
 
-1. Freehand drawing: draw strokes with the mouse on a canvas.
-2. Basic shapes: rectangle, ellipse, line/arrow.
-3. Selecting and moving shapes.
-4. Save/load a drawing to a file.
-5. Later: hand-drawn ("rough") rendering style, undo/redo, text, pan/zoom, export to PNG/SVG.
+1. Rectangle and ellipse shapes.
+2. Save/load a drawing to a file (currently only PNG export).
+3. Hand-drawn ("rough") style for shapes, arrows and lines (pencil strokes already have one).
+4. SVG export.
 
 Order and scope are open to change; confirm with the user before starting each step.
