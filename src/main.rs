@@ -65,6 +65,7 @@ enum Tool {
     Select,
     Pencil,
     Arrow,
+    Line,
     Text,
 }
 
@@ -85,7 +86,8 @@ enum Kind {
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     Stroke { points: Vec<Pos2>, color: Color32, width: f32 },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
-    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32 },
+    /// Without `head` it's a plain line (Line tool).
+    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, head: bool },
     /// `rect` follows the laid-out text; resizing scales `font_px`.
     Text { text: String, font_px: f32, color: Color32 },
 }
@@ -164,7 +166,8 @@ impl Object {
         match &self.kind {
             Kind::Image { .. } => format!("Image #{id}"),
             Kind::Stroke { .. } => format!("Stroke #{id}"),
-            Kind::Arrow { .. } => format!("Arrow #{id}"),
+            Kind::Arrow { head: true, .. } => format!("Arrow #{id}"),
+            Kind::Arrow { head: false, .. } => format!("Line #{id}"),
             Kind::Text { text, .. } => {
                 let first: String = text.lines().next().unwrap_or("").chars().take(20).collect();
                 format!("Text #{id} \"{first}\"")
@@ -458,7 +461,8 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
-                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale);
+                let head = self.tool == Tool::Arrow;
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, head);
             }
             None => {}
         }
@@ -588,7 +592,7 @@ impl DeerawApp {
     fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
         let selected = self.objects.iter().position(|o| self.tool == Tool::Select && Some(o.id) == self.selected);
         let size_kind = match self.tool {
-            Tool::Pencil | Tool::Arrow => Some(SizeKind::Line),
+            Tool::Pencil | Tool::Arrow | Tool::Line => Some(SizeKind::Line),
             Tool::Text => Some(SizeKind::Font),
             Tool::Select => selected.and_then(|i| self.objects[i].size_kind()),
         };
@@ -684,7 +688,7 @@ impl DeerawApp {
     fn handle_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         // The cursor image is sticky between frames, so it must be cleared explicitly.
-        let drawing_tool = matches!(self.tool, Tool::Pencil | Tool::Arrow);
+        let drawing_tool = matches!(self.tool, Tool::Pencil | Tool::Arrow | Tool::Line);
         let crosshair = (drawing_tool && background.hovered())
             .then(|| self.crosshair.get_or_insert_with(crosshair_cursor).clone());
         background.ctx.set_cursor_image(crosshair);
@@ -694,7 +698,7 @@ impl DeerawApp {
                     self.selected = None;
                 }
             }
-            Tool::Pencil | Tool::Arrow => {
+            Tool::Pencil | Tool::Arrow | Tool::Line => {
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     self.drawing = Some(match self.tool {
                         Tool::Pencil => Drawing::Stroke(vec![p]),
@@ -741,8 +745,8 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end)) if start.distance(end) >= MIN_SIZE => {
                 let Style { color, line_width: width, .. } = self.style;
-                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width });
-                self.tool = Tool::Select;
+                let head = self.tool == Tool::Arrow;
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, head });
             }
             _ => {}
         }
@@ -892,6 +896,7 @@ impl DeerawApp {
                             (Tool::Select, "↖ Select"),
                             (Tool::Pencil, "✏ Pencil"),
                             (Tool::Arrow, "➡ Arrow"),
+                            (Tool::Line, "— Line"),
                             (Tool::Text, "T Text"),
                         ] {
                             if ui.selectable_label(self.tool == tool, label).clicked() {
@@ -1042,9 +1047,9 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
             let points = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
             painter.line(points, Stroke::new(width * scale, *color));
         }
-        Kind::Arrow { start, end, color, width } => {
+        Kind::Arrow { start, end, color, width, head } => {
             let stroke = Stroke::new(width * scale, *color);
-            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale);
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, *head);
         }
         Kind::Text { text, font_px, color } => {
             let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), *color);
@@ -1053,17 +1058,17 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
     }
 }
 
-/// Draws a line from `start` to `end` (screen points) with a head at `end`; the head grows
-/// with the stroke width. `scale` is screen points per canvas pixel.
-fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32) {
+/// Draws a line from `start` to `end` (screen points), with a head at `end` if `head`; the head
+/// grows with the stroke width. `scale` is screen points per canvas pixel.
+fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, head: bool) {
     painter.line_segment([start, end], stroke);
     let along = end - start;
     let length = along.length();
-    if length < 1.0 {
+    if !head || length < 1.0 {
         return;
     }
-    let head = ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width;
-    let back = -along / length * head.min(length / 2.0);
+    let head_length = ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width;
+    let back = -along / length * head_length.min(length / 2.0);
     let spread = Rot2::from_angle(0.45);
     painter.line_segment([end, end + spread * back], stroke);
     painter.line_segment([end, end + spread.inverse() * back], stroke);
@@ -1190,7 +1195,7 @@ mod tests {
 
     fn arrow(id: u64) -> Object {
         let (start, end) = (Pos2::ZERO, Pos2::new(10.0, 0.0));
-        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0 } }
+        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0, head: true } }
     }
 
     #[test]

@@ -39,11 +39,12 @@ Keep this list up to date as features are built.
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
    Min size 4px. Delete removes the selected object. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Text.
+4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
-   - Arrow: drag from start to end; switches back to Select afterwards. Arrows are point-to-point:
+   - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
+   - Line: like Arrow but without a head (same object kind, `head: false`); stays in Line mode.
    - Text: click to place a text box and type (multi-line). Escape or clicking elsewhere finishes;
      empty text is discarded. Double-click a text object to edit it. Text has only corner handles
      (resizing scales the font). Switches back to Select afterwards.
@@ -58,8 +59,8 @@ Keep this list up to date as features are built.
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
    transparent, the PNG has real alpha (canvas fill and the window clear color are transparent
    for the capture frame, and the screenshot keeps alpha). Not in undo history.
-8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow or Text is active,
-   or while a stroke, arrow or text is selected. It shows the current color and size; clicking
+8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
+   or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards (picking one collapses it again). Colors: black, white,
    red, orange, green, blue. Size: line width (2/3/6/10px, for pencil and arrows) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px).
