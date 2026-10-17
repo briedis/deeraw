@@ -264,6 +264,7 @@ struct DeerawApp {
     screenshot: Arc<Mutex<Option<Arc<ColorImage>>>>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
+    i_beam: Option<egui::CustomCursorImage>,
     /// See `zoom()`.
     zoom_level: i32,
     /// Screen offset (points) of the canvas origin from the canvas panel's top-left.
@@ -765,10 +766,13 @@ impl DeerawApp {
     fn handle_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         // The cursor image is sticky between frames, so it must be cleared explicitly.
-        let drawing_tool = matches!(self.tool, Tool::Pencil | Tool::Arrow | Tool::Line);
-        let crosshair = (drawing_tool && background.hovered())
-            .then(|| self.crosshair.get_or_insert_with(crosshair_cursor).clone());
-        background.ctx.set_cursor_image(crosshair);
+        let cursor = match self.tool {
+            _ if !background.hovered() => None,
+            Tool::Pencil | Tool::Arrow | Tool::Line => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
+            Tool::Text => Some(self.i_beam.get_or_insert_with(i_beam_cursor)),
+            Tool::Select => None,
+        };
+        background.ctx.set_cursor_image(cursor.cloned());
         match self.tool {
             Tool::Select => {
                 let ctrl = background.ctx.input(|i| i.modifiers.command);
@@ -821,9 +825,6 @@ impl DeerawApp {
                 }
             }
             Tool::Text => {
-                if background.hovered() {
-                    background.ctx.set_cursor_icon(CursorIcon::Text);
-                }
                 if let (true, Some(p)) = (background.clicked(), pointer) {
                     let Style { font_px, color, .. } = self.style;
                     let rect = Rect::from_min_size(p - Vec2::new(0.0, font_px / 2.0), Vec2::splat(MIN_SIZE));
@@ -966,6 +967,9 @@ impl DeerawApp {
             .fixed_pos(to_screen_pos(obj.rect.min))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
+                // The dark theme's caret is light blue, invisible on a white canvas; this color
+                // shows on every background.
+                ui.visuals_mut().text_cursor.stroke = Stroke::new(2.0, SELECTION_COLOR);
                 egui::TextEdit::multiline(text)
                     .font(font)
                     .text_color(*color)
@@ -1118,30 +1122,46 @@ fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32) -> 
     response.on_hover_text(hover).clicked()
 }
 
-/// A crosshair cursor: black lines with a white outline, so it shows on any background.
-/// (The stock Windows crosshair can be invisible over the canvas.)
+/// A crosshair cursor for the drawing tools. (The stock Windows crosshair can be invisible over
+/// the canvas.)
 fn crosshair_cursor() -> egui::CustomCursorImage {
     const SIZE: usize = 23;
     const MID: usize = SIZE / 2;
-    let mut rgba = vec![0u8; SIZE * SIZE * 4];
-    let mut set = |x: usize, y: usize, value: u8| {
-        rgba[(y * SIZE + x) * 4..][..4].copy_from_slice(&[value, value, value, 255]);
-    };
-    // White outline first (3px wide arms), then the black 1px arms on top.
-    for i in 0..SIZE {
-        for offset in [MID - 1, MID + 1] {
-            set(i, offset, 255);
-            set(offset, i, 255);
+    outlined_cursor(SIZE, [MID, MID], |x, y| x == MID || y == MID)
+}
+
+/// A text-insertion (I-beam) cursor for the Text tool; the stock one is invisible on white.
+fn i_beam_cursor() -> egui::CustomCursorImage {
+    const WIDTH: usize = 9;
+    const HEIGHT: usize = 21;
+    const MID: usize = WIDTH / 2;
+    outlined_cursor(HEIGHT, [MID, HEIGHT / 2], |x, y| {
+        let serif = (y == 1 || y == HEIGHT - 2) && (MID - 2..=MID + 2).contains(&x);
+        let stem = x == MID && (1..HEIGHT - 1).contains(&y);
+        serif || stem
+    })
+}
+
+/// A `size`×`size` cursor: black where `ink(x, y)`, with a 1px white outline around it so it
+/// shows on any background.
+fn outlined_cursor(size: usize, hotspot: [usize; 2], ink: impl Fn(usize, usize) -> bool) -> egui::CustomCursorImage {
+    let mut rgba = vec![0u8; size * size * 4];
+    for y in 0..size {
+        for x in 0..size {
+            let near_ink = (y.saturating_sub(1)..=(y + 1).min(size - 1))
+                .any(|ny| (x.saturating_sub(1)..=(x + 1).min(size - 1)).any(|nx| ink(nx, ny)));
+            let value = match (ink(x, y), near_ink) {
+                (true, _) => [0, 0, 0, 255],
+                (false, true) => [255, 255, 255, 255],
+                (false, false) => continue,
+            };
+            rgba[(y * size + x) * 4..][..4].copy_from_slice(&value);
         }
-    }
-    for i in 0..SIZE {
-        set(i, MID, 0);
-        set(MID, i, 0);
     }
     egui::CustomCursorImage {
         rgba: rgba.into(),
-        size: [SIZE as u16; 2],
-        hotspot: [MID as u16; 2],
+        size: [size as u16; 2],
+        hotspot: hotspot.map(|v| v as u16),
     }
 }
 

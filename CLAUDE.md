@@ -98,7 +98,7 @@ Keep this list up to date as features are built.
   no text) and `ctx.copy_image()` writes PNG via arboard.
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
   toolbar icons visually.
-- Pencil/Arrow use a custom bitmap crosshair (`ctx.set_cursor_image`, which is sticky, so it's
+- Pencil/Arrow/Line use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
   cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared.
 - From WSL, run Windows cargo via `powershell.exe` (`$env:USERPROFILE\.cargo\bin\cargo.exe`).
 - Git repo on `master`; commit after each working step.
