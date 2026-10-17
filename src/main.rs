@@ -330,7 +330,7 @@ impl DeerawApp {
 
         let painter = ui.painter().clone();
         if self.background == Background::Transparent && self.capture.is_none() {
-            paint_checkerboard(&painter, canvas_rect);
+            paint_checkerboard(&painter, canvas_rect, 8.0, 242);
         }
         let selecting = self.tool == Tool::Select;
         for obj in &mut self.objects {
@@ -505,7 +505,7 @@ impl DeerawApp {
                 let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
                 match background.color() {
                     Some(color) => _ = ui.painter().rect_filled(swatch, 2.0, color),
-                    None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch),
+                    None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch, 3.5, 150),
                 }
                 ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), egui::StrokeKind::Outside);
                 if response.clicked() {
@@ -799,16 +799,15 @@ impl DeerawApp {
     }
 }
 
-/// Light-gray checkerboard (screen-aligned) standing in for a transparent background.
-fn paint_checkerboard(painter: &Painter, rect: Rect) {
-    const CELL: f32 = 8.0;
+/// Screen-aligned checkerboard standing in for a transparent background.
+fn paint_checkerboard(painter: &Painter, rect: Rect, cell: f32, gray: u8) {
     painter.rect_filled(rect, 0.0, Color32::WHITE);
-    let cols = (rect.width() / CELL).ceil() as i32;
-    let rows = (rect.height() / CELL).ceil() as i32;
+    let cols = (rect.width() / cell).ceil() as i32;
+    let rows = (rect.height() / cell).ceil() as i32;
     for row in 0..rows {
         for col in (row % 2..cols).step_by(2) {
-            let min = rect.min + Vec2::new(col as f32, row as f32) * CELL;
-            painter.rect_filled(Rect::from_min_size(min, Vec2::splat(CELL)), 0.0, Color32::from_gray(242));
+            let min = rect.min + Vec2::new(col as f32, row as f32) * cell;
+            painter.rect_filled(Rect::from_min_size(min, Vec2::splat(cell)), 0.0, Color32::from_gray(gray));
         }
     }
 }
