@@ -1,8 +1,8 @@
 use std::sync::{Arc, Mutex};
 
 use eframe::egui::{
-    self, Align2, Color32, ColorImage, CursorIcon, FontId, Painter, Pos2, Rect, Sense, Stroke,
-    StrokeKind, TextureHandle, Vec2, emath::Rot2,
+    self, Align2, Color32, ColorImage, CursorIcon, FontId, Painter, PointerButton, Pos2, Rect,
+    Sense, Stroke, StrokeKind, TextureHandle, Vec2, emath::Rot2,
 };
 
 const SELECTION_COLOR: Color32 = Color32::from_rgb(105, 101, 219);
@@ -21,6 +21,12 @@ const TEXT_SIZE: f32 = 28.0;
 const ARROW_HIT_DISTANCE: f32 = 6.0;
 /// Radius of an arrow's endpoint handles, in points.
 const POINT_HANDLE_RADIUS: f32 = 5.0;
+/// Zoom is 100% + 20% per level, from 20% to 500%.
+const ZOOM_STEP: f32 = 0.2;
+const MIN_ZOOM_LEVEL: i32 = -4;
+const MAX_ZOOM_LEVEL: i32 = 20;
+/// Mouse wheel distance (in points) that counts as one zoom step, for smooth-scrolling devices.
+const WHEEL_POINTS_PER_STEP: f32 = 50.0;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
 
@@ -34,7 +40,11 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Deeraw",
         options,
-        Box::new(|_cc| Ok(Box::new(DeerawApp::default()))),
+        Box::new(|cc| {
+            // Ctrl +/- zooms the canvas, not the whole UI.
+            cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+            Ok(Box::new(DeerawApp::default()))
+        }),
     )
 }
 
@@ -122,6 +132,13 @@ struct DeerawApp {
     screenshot: Arc<Mutex<Option<Arc<ColorImage>>>>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
+    /// See `zoom()`.
+    zoom_level: i32,
+    /// Screen offset (points) of the canvas origin from the canvas panel's top-left.
+    pan: Vec2,
+    panning: bool,
+    /// Wheel movement not yet turned into a whole zoom step.
+    wheel: f32,
 }
 
 impl eframe::App for DeerawApp {
@@ -174,16 +191,21 @@ impl DeerawApp {
         });
     }
 
+    fn zoom(&self) -> f32 {
+        1.0 + ZOOM_STEP * self.zoom_level as f32
+    }
+
     fn canvas(&mut self, ui: &mut egui::Ui) {
         let ppp = ui.ctx().pixels_per_point();
         let canvas_rect = ui.max_rect();
-        let origin = canvas_rect.min;
-        // Canvas pixels <-> screen points.
-        let to_screen = |r: Rect| {
-            Rect::from_min_max(origin + r.min.to_vec2() / ppp, origin + r.max.to_vec2() / ppp)
-        };
-        let to_canvas = |p: Pos2| ((p - origin) * ppp).to_pos2();
-        let to_screen_pos = |p: Pos2| origin + p.to_vec2() / ppp;
+        self.navigate(ui, canvas_rect, ppp);
+
+        // Canvas pixels <-> screen points. `scale` is screen points per canvas pixel.
+        let origin = canvas_rect.min + self.pan;
+        let scale = self.zoom() / ppp;
+        let to_screen_pos = |p: Pos2| origin + p.to_vec2() * scale;
+        let to_screen = |r: Rect| Rect::from_min_max(to_screen_pos(r.min), to_screen_pos(r.max));
+        let to_canvas = |p: Pos2| ((p - origin) / scale).to_pos2();
 
         self.finish_copy(ui.ctx(), ppp);
 
@@ -226,8 +248,8 @@ impl DeerawApp {
             let editing = self.editing == Some(obj.id);
             if let Kind::Text { text, font_px } = &obj.kind {
                 // Keep the rect in sync with the text layout.
-                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px / ppp), INK);
-                obj.rect = Rect::from_min_size(obj.rect.min, (galley.size() * ppp).max(Vec2::splat(MIN_SIZE)));
+                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), INK);
+                obj.rect = Rect::from_min_size(obj.rect.min, (galley.size() / scale).max(Vec2::splat(MIN_SIZE)));
             }
             if let Kind::Arrow { start, end } = obj.kind {
                 obj.rect = Rect::from_two_pos(start, end);
@@ -247,42 +269,139 @@ impl DeerawApp {
             };
             if selecting && !editing && hit {
                 let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, Sense::click_and_drag());
-                if response.clicked() || response.drag_started() {
+                if response.clicked() || response.drag_started_by(PointerButton::Primary) {
                     self.selected = Some(obj.id);
                 }
                 if response.double_clicked() && matches!(obj.kind, Kind::Text { .. }) {
                     self.editing = Some(obj.id);
                     self.focus_editor = true;
                 }
-                if response.dragged() {
-                    obj.translate(response.drag_delta() * ppp);
+                if response.dragged_by(PointerButton::Primary) {
+                    obj.translate(response.drag_delta() / scale);
                 }
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
             if !editing {
-                paint_object(&painter, obj, rect, to_screen_pos, ppp);
+                paint_object(&painter, obj, rect, to_screen_pos, scale);
             }
         }
 
         match &self.drawing {
             Some(Drawing::Stroke(points)) => {
                 let points = points.iter().map(|p| to_screen_pos(*p)).collect();
-                painter.line(points, Stroke::new(LINE_WIDTH / ppp, INK));
+                painter.line(points, Stroke::new(LINE_WIDTH * scale, INK));
             }
             Some(Drawing::Arrow(start, end)) => {
-                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), ppp);
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), scale);
             }
             None => {}
         }
 
         if selecting && self.capture.is_none() {
-            self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, ppp);
+            self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
         }
-        self.text_editor(ui, origin, ppp);
+        self.text_editor(ui, to_screen_pos, scale);
         if self.capture.is_none() {
             self.toolbar(ui, canvas_rect);
+            self.zoom_indicator(ui, canvas_rect, ppp);
+        }
+        // Set last so it wins over hover cursors of whatever is under the pointer.
+        if self.panning {
+            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+        }
+    }
+
+    /// Middle-drag pans; the mouse wheel (around the cursor) and Ctrl +/- (around the canvas
+    /// center) zoom in 20% steps; Ctrl+0 resets to 100%.
+    fn navigate(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
+        let (hover, delta, middle_down, middle_pressed) = ui.input(|i| {
+            (
+                i.pointer.hover_pos(),
+                i.pointer.delta(),
+                i.pointer.middle_down(),
+                i.pointer.button_pressed(PointerButton::Middle),
+            )
+        });
+        let over_canvas = hover.filter(|p| canvas_rect.contains(*p));
+
+        if middle_pressed && over_canvas.is_some() {
+            self.panning = true;
+        }
+        if !middle_down {
+            self.panning = false;
+        }
+        if self.panning {
+            self.pan += delta;
+        }
+
+        let mut key_steps = 0;
+        let mut reset = false;
+        for event in ui.input(|i| i.events.clone()) {
+            match event {
+                egui::Event::MouseWheel { unit, delta, .. } if over_canvas.is_some() => {
+                    self.wheel += match unit {
+                        egui::MouseWheelUnit::Line => delta.y,
+                        egui::MouseWheelUnit::Point => delta.y / WHEEL_POINTS_PER_STEP,
+                        egui::MouseWheelUnit::Page => delta.y * 10.0,
+                    };
+                }
+                egui::Event::Key { key, pressed: true, modifiers, .. }
+                    if modifiers.command && self.editing.is_none() =>
+                {
+                    match key {
+                        egui::Key::Plus | egui::Key::Equals => key_steps += 1,
+                        egui::Key::Minus => key_steps -= 1,
+                        egui::Key::Num0 => reset = true,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        let wheel_steps = self.wheel.trunc();
+        self.wheel -= wheel_steps;
+
+        let level = if reset {
+            0
+        } else {
+            let steps = key_steps + wheel_steps as i32;
+            (self.zoom_level + steps).clamp(MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL)
+        };
+        if level == self.zoom_level {
+            return;
+        }
+        // Keep the canvas point under the anchor fixed on screen.
+        let anchor = over_canvas
+            .filter(|_| wheel_steps != 0.0)
+            .unwrap_or(canvas_rect.center());
+        let old_scale = self.zoom() / ppp;
+        self.zoom_level = level;
+        self.pan = pan_for_zoom(self.pan, anchor - canvas_rect.min, old_scale, self.zoom() / ppp);
+    }
+
+    /// Shows the zoom level; clicking it resets to 100% around the canvas center.
+    fn zoom_indicator(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
+        let label = format!("{:.0}%", self.zoom() * 100.0);
+        let clicked = egui::Area::new(egui::Id::unique("zoom"))
+            .pivot(Align2::RIGHT_BOTTOM)
+            .fixed_pos(canvas_rect.right_bottom() - Vec2::splat(16.0))
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::popup(ui.style())
+                    .show(ui, |ui| ui.add(egui::Label::new(label).sense(Sense::click())))
+                    .inner
+                    .on_hover_cursor(CursorIcon::PointingHand)
+                    .on_hover_text("Reset to 100%")
+                    .clicked()
+            })
+            .inner;
+        if clicked && self.zoom_level != 0 {
+            let old_scale = self.zoom() / ppp;
+            self.zoom_level = 0;
+            let center = canvas_rect.center() - canvas_rect.min;
+            self.pan = pan_for_zoom(self.pan, center, old_scale, self.zoom() / ppp);
         }
     }
 
@@ -301,13 +420,13 @@ impl DeerawApp {
                 }
             }
             Tool::Pencil | Tool::Arrow => {
-                if let (true, Some(p)) = (background.drag_started(), pointer) {
+                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     self.drawing = Some(match self.tool {
                         Tool::Pencil => Drawing::Stroke(vec![p]),
                         _ => Drawing::Arrow(p, p),
                     });
                 }
-                if let (true, Some(p)) = (background.dragged(), pointer) {
+                if let (true, Some(p)) = (background.dragged_by(PointerButton::Primary), pointer) {
                     match &mut self.drawing {
                         Some(Drawing::Stroke(points)) => {
                             if points.last().is_none_or(|last| last.distance(p) >= 1.0) {
@@ -358,7 +477,7 @@ impl DeerawApp {
         to_screen: impl Fn(Rect) -> Rect,
         to_screen_pos: impl Fn(Pos2) -> Pos2,
         to_canvas: impl Fn(Pos2) -> Pos2,
-        ppp: f32,
+        scale: f32,
     ) {
         let Some(obj) = self.objects.iter_mut().find(|o| Some(o.id) == self.selected) else {
             return;
@@ -373,8 +492,8 @@ impl DeerawApp {
                 let id = egui::Id::unique(("point-handle", obj.id, i));
                 let hit = Rect::from_center_size(center, Vec2::splat(POINT_HANDLE_RADIUS * 2.0 + 4.0));
                 let response = ui.interact(hit, id, Sense::drag());
-                if response.dragged() {
-                    *point += response.drag_delta() * ppp;
+                if response.dragged_by(PointerButton::Primary) {
+                    *point += response.drag_delta() / scale;
                 }
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(CursorIcon::Grab);
@@ -408,11 +527,13 @@ impl DeerawApp {
             let id = egui::Id::unique(("handle", obj.id, dx, dy));
             let response = ui.interact(handle.expand(2.0), id, Sense::drag());
             let pointer = response.interact_pointer_pos().map(&to_canvas);
-            if let (true, Some(p)) = (response.drag_started(), pointer) {
+            if let (true, Some(p)) = (response.drag_started_by(PointerButton::Primary), pointer) {
                 let handle_pos = obj.rect.lerp_inside(Vec2::new(dx as f32 + 1.0, dy as f32 + 1.0) / 2.0);
                 self.resize_drag = Some(ResizeDrag { start: obj.rect, grab_offset: p - handle_pos });
             }
-            if let (true, Some(p), Some(drag)) = (response.dragged(), pointer, &self.resize_drag) {
+            if let (true, Some(p), Some(drag)) =
+                (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
+            {
                 // Text has no fixed aspect: it keeps whatever the layout gives it.
                 let aspect = match obj.kind {
                     Kind::Text { .. } => drag.start.aspect_ratio(),
@@ -441,7 +562,7 @@ impl DeerawApp {
     }
 
     /// Shows an inline text box over the text object being edited.
-    fn text_editor(&mut self, ui: &mut egui::Ui, origin: Pos2, ppp: f32) {
+    fn text_editor(&mut self, ui: &mut egui::Ui, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
         let Some(id) = self.editing else { return };
         let Some(obj) = self.objects.iter_mut().find(|o| o.id == id) else {
             self.editing = None;
@@ -451,9 +572,9 @@ impl DeerawApp {
             self.editing = None;
             return;
         };
-        let font = FontId::proportional(*font_px / ppp);
+        let font = FontId::proportional(*font_px * scale);
         let output = egui::Area::new(egui::Id::unique(("text-editor", id)))
-            .fixed_pos(origin + obj.rect.min.to_vec2() / ppp)
+            .fixed_pos(to_screen_pos(obj.rect.min))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
                 egui::TextEdit::multiline(text)
@@ -579,8 +700,8 @@ fn crosshair_cursor() -> egui::CustomCursorImage {
     }
 }
 
-fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, ppp: f32) {
-    let stroke = Stroke::new(LINE_WIDTH / ppp, INK);
+fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
+    let stroke = Stroke::new(LINE_WIDTH * scale, INK);
     match &obj.kind {
         Kind::Image { texture } => {
             let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
@@ -591,28 +712,36 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
             painter.line(points, stroke);
         }
         Kind::Arrow { start, end } => {
-            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), ppp);
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), scale);
         }
         Kind::Text { text, font_px } => {
-            let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px / ppp), INK);
+            let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), INK);
             painter.galley(rect.min, galley, INK);
         }
     }
 }
 
 /// Draws a line from `start` to `end` (screen points) with a head at `end`.
-fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, ppp: f32) {
-    let stroke = Stroke::new(LINE_WIDTH / ppp, INK);
+/// `scale` is screen points per canvas pixel.
+fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, scale: f32) {
+    let stroke = Stroke::new(LINE_WIDTH * scale, INK);
     painter.line_segment([start, end], stroke);
     let along = end - start;
     let length = along.length();
     if length < 1.0 {
         return;
     }
-    let back = -along / length * (ARROW_HEAD / ppp).min(length / 2.0);
+    let back = -along / length * (ARROW_HEAD * scale).min(length / 2.0);
     let spread = Rot2::from_angle(0.45);
     painter.line_segment([end, end + spread * back], stroke);
     painter.line_segment([end, end + spread.inverse() * back], stroke);
+}
+
+/// New pan after changing the scale, so the canvas point at `anchor` (relative to the canvas
+/// panel, in points) stays under it.
+fn pan_for_zoom(pan: Vec2, anchor: Vec2, old_scale: f32, new_scale: f32) -> Vec2 {
+    let canvas_point = (anchor - pan) / old_scale;
+    anchor - canvas_point * new_scale
 }
 
 /// Distance from `p` to the line segment `a`-`b`.
@@ -716,6 +845,15 @@ mod tests {
 
         let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(0.0, 10.0), 2.0, true);
         assert_eq!(r, rect(0.0, 10.0, 200.0, 90.0));
+    }
+
+    #[test]
+    fn zoom_keeps_anchor_fixed() {
+        let (pan, anchor) = (Vec2::new(30.0, -10.0), Vec2::new(200.0, 150.0));
+        let new_pan = pan_for_zoom(pan, anchor, 1.0, 1.5);
+        let canvas_point = (anchor - pan) / 1.0;
+        assert_eq!(new_pan + canvas_point * 1.5, anchor);
+        assert_eq!(pan_for_zoom(pan, anchor, 1.0, 1.0), pan);
     }
 
     #[test]

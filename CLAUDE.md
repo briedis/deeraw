@@ -47,13 +47,22 @@ Keep this list up to date as features are built.
    - Text: click to place a text box and type (multi-line). Escape or clicking elsewhere finishes;
      empty text is discarded. Double-click a text object to edit it. Text has only corner handles
      (resizing scales the font). Switches back to Select afterwards.
+5. **Pan & zoom** — middle-button drag pans. Mouse wheel zooms around the cursor; Ctrl +/- zoom
+   around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
+   Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%. Copy captures at the
+   current zoom.
 
 ## Current state
 
 - All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. `cargo test` covers the
   resize math (`resize_to`).
-- Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels (physical pixels, not egui
-  points; origin = central panel's top-left), so a fresh image paste displays 1:1. Stroke points
+- Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
+  displays 1:1 at 100% zoom. View transform: `screen = panel_min + pan + canvas * scale`, with
+  `scale = zoom / pixels_per_point` (screen points per canvas pixel); the closures `to_screen_pos`,
+  `to_screen` and `to_canvas` in `canvas()` implement it. Sizes in canvas pixels (line width,
+  font) are multiplied by `scale` when painting; screen drag deltas are divided by it.
+- Object/handle/drawing drags use `dragged_by(PointerButton::Primary)` so middle-drag only pans.
+- egui's built-in Ctrl +/- UI zoom is disabled (`zoom_with_keyboard = false`). Stroke points
   are normalized (0..1) to `rect`, so move/resize only change `rect`. Arrow endpoints are stored
   in canvas pixels and `rect` is re-derived from them each frame; use `Object::translate` to move. Text `rect`
   is re-synced to the text layout every frame; resizing text scales `font_px`.
