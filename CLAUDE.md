@@ -35,13 +35,6 @@ Keep this list up to date as features are built.
    - Ctrl+C copies everything (not just what's visible) as a PNG cropped to the content's bounding
      box (+10px padding), at 1 canvas pixel per PNG pixel whatever the zoom (scaled down only past
      the GPU's max texture size). No selection or UI in it. Clipboard gets PNG + DIB formats.
-   - Pasting into an empty canvas fits the window to the image instead: inner size = image + 80pt
-     margin on each side + layers panel (if shown), at least 800×600, and the image centered. If that would
-     exceed 75% of the screen, it zooms out (20% steps) until it fits. Skipped when maximized or
-     fullscreen. The window isn't moved, so a big one can extend past the screen edge.
-   - Ctrl+C copies the canvas as a PNG: a screenshot of the canvas cropped to the content's
-     bounding box (+10px padding), with selection/toolbar hidden for that frame. Only the
-     visible part of the canvas is captured. Clipboard gets PNG + DIB formats.
 2. **Layers panel** — hidden by default; Ctrl+L toggles it (works anywhere, even while typing). Resizable left panel listing every object, topmost first, with its
    position, size and kind-specific info (source size, point count, font size). Doubles as a
    debug view. Clicking a row selects it. Showing/hiding/resizing it doesn't move the drawing
@@ -63,7 +56,14 @@ Keep this list up to date as features are built.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
-   - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
+   - Pencil: drag to draw a freehand stroke (it starts on press, so a click leaves a dot); stays in Pencil mode. Two pen styles (style panel):
+     plain (uniform width) or hand-drawn, like Excalidraw's freehand: the points are smoothed
+     (strongly where close together, i.e. slow jitter; barely where far apart) and drawn as a
+     Catmull-Rom spline (`spline`), and the width follows drawing speed (slow → up to 1.5× the line width, fast, from 2500 px/s
+     → down to 0.4×). Speed-based pressures are recorded for every stroke, so a stroke can be
+     switched between styles afterwards. While drawing, every `PointerMoved` event of the frame
+     is recorded (not just the latest position), with times spread by distance (`add_stroke_points`). Hand-drawn strokes are painted as one feathered mesh
+     (`paint_hand_drawn`) plus round caps and joins at sharp turns.
    - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
@@ -97,7 +97,7 @@ Keep this list up to date as features are built.
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards (picking one collapses it again). Colors: black, white,
-   red, orange, green, blue. Size: line width (2/3/6/10px, for pencil and arrows) or font size
+   red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Size: line width (2/3/6/10px, for pencil and arrows) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
    also get an alignment button with a 3×3 grid).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
@@ -110,6 +110,10 @@ Keep this list up to date as features are built.
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   resize math (`resize_to`).
+- App icon: `assets/deer.svg` is the source (dark variant: #242424 rounded square, white deer drawn as
+  round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow, run from WSL) renders it
+  to `assets/icon.ico` (16–256px), embedded in the exe by `build.rs` (winresource, needs the Windows
+  SDK's rc.exe), and `assets/icon.png` (256px), the window/taskbar icon (`with_icon`).
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
   displays 1:1 at 100% zoom. View transform: `screen = panel_min + pan + canvas * scale`, with
   `scale = zoom / pixels_per_point` (screen points per canvas pixel); the closures `to_screen_pos`,

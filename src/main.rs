@@ -44,6 +44,10 @@ const WHEEL_POINTS_PER_STEP: f32 = 50.0;
 const MAX_UNDO: usize = 200;
 /// How far Ctrl+D copies are moved from the original, in canvas pixels.
 const DUPLICATE_OFFSET: f32 = 20.0;
+/// Drawing speed (canvas pixels per second) at which a hand-drawn stroke is thinnest.
+const THIN_SPEED: f32 = 2500.0;
+/// How quickly a stroke's pressure follows the speed (0..1 per point); lower is smoother.
+const PRESSURE_EASING: f32 = 0.25;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
 /// Free space around the first pasted image when the window is fitted to it, in points.
@@ -57,7 +61,11 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Deeraw")
-            .with_inner_size([1024.0, 768.0]),
+            .with_inner_size([1024.0, 768.0])
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
+                    .expect("bundled icon is a valid PNG"),
+            ),
         ..Default::default()
     };
     eframe::run_native(
@@ -97,7 +105,9 @@ enum Kind {
     /// `uv` is the part of the texture that's kept (0..1); cropping only changes `uv` and `rect`.
     Image { texture: TextureHandle, uv: Rect },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
-    Stroke { points: Vec<Pos2>, color: Color32, width: f32 },
+    /// `pressures` (0..1, one per point, from drawing speed) are always recorded, but only
+    /// used when `hand_drawn`: then the stroke is smoothed and its width varies.
+    Stroke { points: Vec<Pos2>, pressures: Vec<f32>, color: Color32, width: f32, hand_drawn: bool },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
     /// Without `head` it's a plain line (Line tool).
     Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, head: bool },
@@ -122,6 +132,8 @@ struct TextFrame {
 enum StyleSection {
     Color,
     Size(SizeKind),
+    /// Plain or hand-drawn pencil strokes.
+    Pen,
     Align,
     Fill,
 }
@@ -139,6 +151,8 @@ struct Style {
     color: Color32,
     line_width: f32,
     font_px: f32,
+    /// For pencil strokes.
+    hand_drawn: bool,
     /// For text boxes.
     align: Align2,
     fill: Option<Color32>,
@@ -146,7 +160,7 @@ struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], align: Align2::LEFT_TOP, fill: None }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, align: Align2::LEFT_TOP, fill: None }
     }
 }
 
@@ -173,6 +187,14 @@ impl Object {
         match &mut self.kind {
             Kind::Image { .. } => None,
             Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Text { color, .. } => Some(color),
+        }
+    }
+
+    /// Plain or hand-drawn, for pencil strokes only.
+    fn hand_drawn_mut(&mut self) -> Option<&mut bool> {
+        match &mut self.kind {
+            Kind::Stroke { hand_drawn, .. } => Some(hand_drawn),
+            _ => None,
         }
     }
 
@@ -229,7 +251,8 @@ struct ResizeDrag {
 
 /// A stroke, arrow or text box being drawn, in canvas pixels.
 enum Drawing {
-    Stroke(Vec<Pos2>),
+    /// Points and when each was added (seconds), for the speed-based pressure.
+    Stroke(Vec<Pos2>, Vec<f64>),
     Arrow(Pos2, Pos2),
     TextBox(Pos2, Pos2),
 }
@@ -398,8 +421,9 @@ impl DeerawApp {
                             info += &format!(", cropped to {:.0}×{:.0}", crop.x, crop.y);
                         }
                     }
-                    Kind::Stroke { points, width, .. } => {
-                        info += &format!("\n{} points, width {width:.0}px", points.len())
+                    Kind::Stroke { points, width, hand_drawn, .. } => {
+                        let pen = if *hand_drawn { ", hand-drawn" } else { "" };
+                        info += &format!("\n{} points, width {width:.0}px{pen}", points.len())
                     }
                     Kind::Text { font_px, frame, .. } => {
                         info += &format!("\nfont {font_px:.0}px");
@@ -600,9 +624,16 @@ impl DeerawApp {
         }
 
         match &self.drawing {
-            Some(Drawing::Stroke(points)) => {
-                let points = points.iter().map(|p| to_screen_pos(*p)).collect();
-                painter.line(points, Stroke::new(self.style.line_width * scale, self.style.color));
+            Some(Drawing::Stroke(points, times)) => {
+                let screen: Vec<Pos2> = points.iter().map(|p| to_screen_pos(*p)).collect();
+                let (width, color) = (self.style.line_width * scale, self.style.color);
+                if self.style.hand_drawn {
+                    paint_hand_drawn(&painter, &screen, &speed_pressures(points, times), width, color);
+                } else if let [dot] = screen[..] {
+                    painter.circle_filled(dot, width / 2.0, color);
+                } else {
+                    painter.line(screen, Stroke::new(width, color));
+                }
             }
             Some(Drawing::Arrow(start, end)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
@@ -778,6 +809,15 @@ impl DeerawApp {
                 (kind, size.unwrap_or(*self.style.size_mut(kind)))
             })
             .collect();
+        let show_pen = match self.tool {
+            Tool::Pencil => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].hand_drawn_mut().is_some()),
+            _ => false,
+        };
+        let hand_drawn = targets
+            .iter()
+            .find_map(|&i| self.objects[i].hand_drawn_mut().map(|h| *h))
+            .unwrap_or(self.style.hand_drawn);
         let show_align = match self.tool {
             Tool::Text => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].align_mut().is_some()),
@@ -794,6 +834,7 @@ impl DeerawApp {
         match self.style_open {
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
             Some(StyleSection::Align | StyleSection::Fill) if !show_align => self.style_open = None,
+            Some(StyleSection::Pen) if !show_pen => self.style_open = None,
             _ => {}
         }
 
@@ -801,6 +842,7 @@ impl DeerawApp {
         let mut new_size = None;
         let mut new_align = None;
         let mut new_fill = None;
+        let mut new_pen = None;
         egui::Area::new(egui::Id::unique("style"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
@@ -826,6 +868,13 @@ impl DeerawApp {
                                     for option in options {
                                         if size_button(ui, current == Some(option), kind, option) {
                                             new_size = Some((kind, option));
+                                        }
+                                    }
+                                }
+                                StyleSection::Pen => {
+                                    for option in [false, true] {
+                                        if pen_button(ui, hand_drawn == option, option) {
+                                            new_pen = Some(option);
                                         }
                                     }
                                 }
@@ -863,6 +912,9 @@ impl DeerawApp {
                             for &(kind, size) in &sizes {
                                 self.style_toggle(StyleSection::Size(kind), |open| size_button(ui, open, kind, size));
                             }
+                            if show_pen {
+                                self.style_toggle(StyleSection::Pen, |open| pen_button(ui, open, hand_drawn));
+                            }
                             if show_align {
                                 self.style_toggle(StyleSection::Align, |open| align_button(ui, open, align));
                                 let name = match fill {
@@ -879,7 +931,7 @@ impl DeerawApp {
                 });
             });
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() {
             return;
         }
         self.style_open = None;
@@ -896,6 +948,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(f) = self.objects[i].fill_mut() {
                     *f = fill;
+                }
+            }
+        }
+        if let Some(pen) = new_pen {
+            self.style.hand_drawn = pen;
+            for &i in &targets {
+                if let Some(h) = self.objects[i].hand_drawn_mut() {
+                    *h = pen;
                 }
             }
         }
@@ -994,23 +1054,42 @@ impl DeerawApp {
                     }
                 }
             }
-            Tool::Pencil | Tool::Arrow | Tool::Line => {
-                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
-                    self.drawing = Some(match self.tool {
-                        Tool::Pencil => Drawing::Stroke(vec![p]),
-                        _ => Drawing::Arrow(p, p),
-                    });
-                }
-                if let (true, Some(p)) = (background.dragged_by(PointerButton::Primary), pointer) {
-                    match &mut self.drawing {
-                        Some(Drawing::Stroke(points)) => {
-                            if points.last().is_none_or(|last| last.distance(p) >= 1.0) {
-                                points.push(p);
-                            }
-                        }
-                        Some(Drawing::Arrow(_, end) | Drawing::TextBox(_, end)) => *end = p,
-                        None => {}
+            Tool::Pencil => {
+                // Starts on press, not after the drag threshold, so a click leaves a dot.
+                let (now, primary_down, origin) =
+                    background.ctx.input(|i| (i.time, i.pointer.primary_down(), i.pointer.press_origin()));
+                let down = primary_down && background.is_pointer_button_down_on();
+                match (&mut self.drawing, down, pointer) {
+                    (None, true, Some(p)) => {
+                        let start = origin.map_or(p, &to_canvas);
+                        self.drawing = Some(Drawing::Stroke(vec![start], vec![now]));
                     }
+                    (Some(Drawing::Stroke(points, times)), true, Some(_)) => {
+                        // Every move since last frame, not just the latest position: fast
+                        // strokes would otherwise turn into a few long straight segments.
+                        let moves: Vec<Pos2> = background.ctx.input(|i| {
+                            i.events
+                                .iter()
+                                .filter_map(|e| match e {
+                                    egui::Event::PointerMoved(pos) => Some(to_canvas(*pos)),
+                                    _ => None,
+                                })
+                                .collect()
+                        });
+                        add_stroke_points(points, times, &moves, now);
+                    }
+                    (Some(_), false, _) => self.finish_drawing(),
+                    _ => {}
+                }
+            }
+            Tool::Arrow | Tool::Line => {
+                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
+                    self.drawing = Some(Drawing::Arrow(p, p));
+                }
+                if let (true, Some(p), Some(Drawing::Arrow(_, end))) =
+                    (background.dragged_by(PointerButton::Primary), pointer, &mut self.drawing)
+                {
+                    *end = p;
                 }
                 if background.drag_stopped() {
                     self.finish_drawing();
@@ -1050,10 +1129,11 @@ impl DeerawApp {
 
     fn finish_drawing(&mut self) {
         match self.drawing.take() {
-            Some(Drawing::Stroke(points)) if points.len() >= 2 => {
+            Some(Drawing::Stroke(points, times)) => {
+                let pressures = speed_pressures(&points, &times);
                 let (rect, points) = normalize(&points);
-                let Style { color, line_width: width, .. } = self.style;
-                self.add(rect, Kind::Stroke { points, color, width });
+                let Style { color, line_width: width, hand_drawn, .. } = self.style;
+                self.add(rect, Kind::Stroke { points, pressures, color, width, hand_drawn });
             }
             Some(Drawing::Arrow(start, end)) if start.distance(end) >= MIN_SIZE => {
                 let Style { color, line_width: width, .. } = self.style;
@@ -1683,6 +1763,148 @@ fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32) -> 
     response.on_hover_text(hover).clicked()
 }
 
+/// A selectable pen style button with a sample stroke: plain or hand-drawn.
+fn pen_button(ui: &mut egui::Ui, selected: bool, hand_drawn: bool) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::new(30.0, 22.0));
+    let response = ui.add(button);
+    let r = response.rect.shrink2(Vec2::new(7.0, 6.0));
+    let points: Vec<Pos2> = (0..=16)
+        .map(|i| {
+            let t = i as f32 / 16.0;
+            Pos2::new(r.left() + t * r.width(), r.center().y + (t * std::f32::consts::TAU).sin() * r.height() / 2.0)
+        })
+        .collect();
+    let color = ui.visuals().text_color();
+    if hand_drawn {
+        // Thick at the start, thinning out: like a quick pen stroke.
+        let pressures: Vec<f32> = (0..points.len()).map(|i| 1.0 - i as f32 / points.len() as f32).collect();
+        paint_hand_drawn(ui.painter(), &points, &pressures, 2.5, color);
+    } else {
+        ui.painter().line(points, Stroke::new(1.5, color));
+    }
+    let name = if hand_drawn { "Hand-drawn: smoothed, faster strokes are thinner" } else { "Plain line" };
+    response.on_hover_text(name).clicked()
+}
+
+/// Appends the positions one frame's moves reached (at least 1px apart) to a stroke being
+/// drawn. They all arrive at frame time `now`, so their times are spread between the previous
+/// point's time and `now` by distance, which keeps the speed (and so the pressure) right.
+fn add_stroke_points(points: &mut Vec<Pos2>, times: &mut Vec<f64>, moves: &[Pos2], now: f64) {
+    let (Some(&start), Some(&start_time)) = (points.last(), times.last()) else { return };
+    let mut new = vec![];
+    for &p in moves {
+        if new.last().unwrap_or(&start).distance(p) >= 1.0 {
+            new.push(p);
+        }
+    }
+    let total: f32 = new.iter().scan(start, |prev, &p| Some(std::mem::replace(prev, p).distance(p))).sum();
+    let mut traveled = 0.0;
+    let mut prev = start;
+    for p in new {
+        traveled += prev.distance(p);
+        prev = p;
+        points.push(p);
+        times.push(start_time + (now - start_time) * (traveled / total) as f64);
+    }
+}
+
+/// Pressure (0..1) per stroke point from how fast it was drawn: slow is 1, `THIN_SPEED` and
+/// faster is 0. Eased from point to point so the width changes gradually.
+fn speed_pressures(points: &[Pos2], times: &[f64]) -> Vec<f32> {
+    let mut pressure = 0.5;
+    let mut pressures = Vec::with_capacity(points.len());
+    for i in 0..points.len() {
+        if i > 0 {
+            let dt = ((times[i] - times[i - 1]) as f32).max(0.001);
+            let speed = points[i].distance(points[i - 1]) / dt;
+            let target = (1.0 - speed / THIN_SPEED).clamp(0.0, 1.0);
+            pressure += (target - pressure) * PRESSURE_EASING;
+        }
+        pressures.push(pressure);
+    }
+    pressures
+}
+
+/// Paints a hand-drawn stroke: the points (screen) are smoothed, and the width varies from
+/// 0.4× (`pressure` 0) to 1.5× `width` (pressure 1). One anti-aliased mesh (a strip with a
+/// feathered edge on both sides), plus round caps and round joins at sharp turns.
+fn paint_hand_drawn(painter: &Painter, points: &[Pos2], pressures: &[f32], width: f32, color: Color32) {
+    let Some(&first) = points.first() else { return };
+    let radius = |pressure: f32| width * (0.4 + 1.1 * pressure) / 2.0;
+    // Each point is pulled towards the previous smoothed point (the last one stays): strongly
+    // for close points (slow, jittery drawing), barely for far ones (fast drawing, where it would
+    // flatten the shape; the spline rounds those instead).
+    let mut smooth = Vec::with_capacity(points.len());
+    let mut current = first;
+    for (i, &p) in points.iter().enumerate() {
+        let follow = (current.distance(p) / 12.0).clamp(0.3, 1.0);
+        current = if i + 1 == points.len() { p } else { current.lerp(p, follow) };
+        smooth.push(current);
+    }
+    let (smooth, pressures) = spline(&smooth, pressures);
+    let n = smooth.len();
+    let feather = 1.0 / painter.pixels_per_point();
+    let mut mesh = egui::epaint::Mesh::default();
+    let mut normal = Vec2::ZERO;
+    for i in 0..n {
+        let along = smooth[(i + 1).min(n - 1)] - smooth[i.saturating_sub(1)];
+        if along.length() > 0.001 {
+            normal = along.normalized().rot90();
+        }
+        let r = radius(pressures[i]);
+        let (inner, outer) = ((r - feather / 2.0).max(0.0), r + feather / 2.0);
+        let p = smooth[i];
+        mesh.colored_vertex(p + normal * outer, Color32::TRANSPARENT);
+        mesh.colored_vertex(p + normal * inner, color);
+        mesh.colored_vertex(p - normal * inner, color);
+        mesh.colored_vertex(p - normal * outer, Color32::TRANSPARENT);
+        if i > 0 {
+            let (a, b) = (4 * (i as u32 - 1), 4 * i as u32);
+            for k in 0..3 {
+                mesh.add_triangle(a + k, a + k + 1, b + k);
+                mesh.add_triangle(a + k + 1, b + k + 1, b + k);
+            }
+        }
+    }
+    painter.add(mesh);
+    for i in 0..n {
+        let sharp = i > 0 && i + 1 < n && {
+            let (a, b) = (smooth[i] - smooth[i - 1], smooth[i + 1] - smooth[i]);
+            a.length() > 0.001 && b.length() > 0.001 && a.normalized().dot(b.normalized()) < 0.7
+        };
+        if i == 0 || i + 1 == n || sharp {
+            painter.circle_filled(smooth[i], radius(pressures[i]), color);
+        }
+    }
+}
+
+/// Subdivides a polyline into a Catmull-Rom spline through its points (about one point per 2
+/// units of length, at most 16 per segment), so sparse points still give a round curve.
+/// Pressures are interpolated along with it.
+fn spline(points: &[Pos2], pressures: &[f32]) -> (Vec<Pos2>, Vec<f32>) {
+    let n = points.len();
+    if n < 3 {
+        return (points.to_vec(), pressures.to_vec());
+    }
+    let (mut out, mut out_pressures) = (vec![points[0]], vec![pressures[0]]);
+    for i in 0..n - 1 {
+        let [p0, p1, p2, p3] = [i.saturating_sub(1), i, i + 1, (i + 2).min(n - 1)].map(|j| points[j].to_vec2());
+        let steps = ((p2 - p1).length() / 2.0).ceil().clamp(1.0, 16.0) as usize;
+        for step in 1..=steps {
+            let t = step as f32 / steps as f32;
+            let (t2, t3) = (t * t, t * t * t);
+            let q = 0.5
+                * (2.0 * p1
+                    + (p2 - p0) * t
+                    + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
+                    + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t3);
+            out.push(q.to_pos2());
+            out_pressures.push(egui::lerp(pressures[i]..=pressures[i + 1], t));
+        }
+    }
+    (out, out_pressures)
+}
+
 /// A crosshair cursor for the drawing tools. (The stock Windows crosshair can be invisible over
 /// the canvas.)
 fn crosshair_cursor() -> egui::CustomCursorImage {
@@ -1731,9 +1953,15 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
         Kind::Image { texture, uv } => {
             painter.image(texture.id(), rect, *uv, Color32::WHITE);
         }
-        Kind::Stroke { points, color, width } => {
-            let points = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
-            painter.line(points, Stroke::new(width * scale, *color));
+        Kind::Stroke { points, pressures, color, width, hand_drawn } => {
+            let points: Vec<Pos2> = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
+            if *hand_drawn {
+                paint_hand_drawn(painter, &points, pressures, width * scale, *color);
+            } else if let [dot] = points[..] {
+                painter.circle_filled(dot, width * scale / 2.0, *color);
+            } else {
+                painter.line(points, Stroke::new(width * scale, *color));
+            }
         }
         Kind::Arrow { start, end, color, width, head } => {
             let stroke = Stroke::new(width * scale, *color);
@@ -1898,6 +2126,37 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         assert_eq!(reader.info().size(), (2, 1));
         assert_eq!(data, [255, 0, 0, 128, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn slow_strokes_are_thicker_than_fast_ones() {
+        let points: Vec<Pos2> = (0..20).map(|i| Pos2::new(i as f32 * 10.0, 0.0)).collect();
+        let slow: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect(); // 100 px/s
+        let fast: Vec<f64> = (0..20).map(|i| i as f64 * 0.002).collect(); // 5000 px/s
+        let (slow, fast) = (speed_pressures(&points, &slow), speed_pressures(&points, &fast));
+        assert!(slow[19] > 0.9 && fast[19] < 0.1, "{slow:?} {fast:?}");
+        assert!(slow.iter().chain(&fast).all(|p| (0.0..=1.0).contains(p)));
+    }
+
+    #[test]
+    fn frame_moves_get_times_spread_by_distance() {
+        let (mut points, mut times) = (vec![Pos2::ZERO], vec![1.0]);
+        let moves = [Pos2::new(10.0, 0.0), Pos2::new(10.5, 0.0), Pos2::new(40.0, 0.0)];
+        add_stroke_points(&mut points, &mut times, &moves, 2.0);
+        // The 0.5px move is dropped; the rest arrive in proportion to the distance.
+        assert_eq!(points, vec![Pos2::ZERO, Pos2::new(10.0, 0.0), Pos2::new(40.0, 0.0)]);
+        assert_eq!(times, vec![1.0, 1.25, 2.0]);
+    }
+
+    #[test]
+    fn spline_passes_through_points() {
+        let points = [Pos2::new(0.0, 0.0), Pos2::new(20.0, 10.0), Pos2::new(40.0, 0.0)];
+        let (curve, pressures) = spline(&points, &[0.0, 0.5, 1.0]);
+        assert!(curve.len() > 10 && curve.len() == pressures.len());
+        for p in points {
+            assert!(curve.iter().any(|q| q.distance(p) < 1e-4), "{p:?} not on the curve");
+        }
+        assert_eq!(pressures.last(), Some(&1.0));
     }
 
     #[test]
