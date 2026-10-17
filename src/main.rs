@@ -17,6 +17,10 @@ const LINE_WIDTH: f32 = 3.0;
 const ARROW_HEAD: f32 = 18.0;
 /// Font size of new text, in canvas pixels.
 const TEXT_SIZE: f32 = 28.0;
+/// How close (in points) the pointer must be to an arrow's line to grab it.
+const ARROW_HIT_DISTANCE: f32 = 6.0;
+/// Radius of an arrow's endpoint handles, in points.
+const POINT_HANDLE_RADIUS: f32 = 5.0;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
 
@@ -57,13 +61,21 @@ enum Kind {
     Image { texture: TextureHandle },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     Stroke { points: Vec<Pos2> },
-    /// Normalized to `rect`, like `Stroke`.
+    /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
     Arrow { start: Pos2, end: Pos2 },
     /// `rect` follows the laid-out text; resizing scales `font_px`.
     Text { text: String, font_px: f32 },
 }
 
 impl Object {
+    fn translate(&mut self, delta: Vec2) {
+        self.rect = self.rect.translate(delta);
+        if let Kind::Arrow { start, end } = &mut self.kind {
+            *start += delta;
+            *end += delta;
+        }
+    }
+
     fn name(&self) -> String {
         let id = self.id;
         match &self.kind {
@@ -108,6 +120,8 @@ struct DeerawApp {
     /// Selection and toolbar are hidden until the screenshot arrives.
     capture: Option<Rect>,
     screenshot: Arc<Mutex<Option<Arc<ColorImage>>>>,
+    /// Built once: the OS caches custom cursors by buffer identity.
+    crosshair: Option<egui::CustomCursorImage>,
 }
 
 impl eframe::App for DeerawApp {
@@ -169,6 +183,7 @@ impl DeerawApp {
             Rect::from_min_max(origin + r.min.to_vec2() / ppp, origin + r.max.to_vec2() / ppp)
         };
         let to_canvas = |p: Pos2| ((p - origin) * ppp).to_pos2();
+        let to_screen_pos = |p: Pos2| origin + p.to_vec2() / ppp;
 
         self.finish_copy(ui.ctx(), ppp);
 
@@ -214,10 +229,24 @@ impl DeerawApp {
                 let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px / ppp), INK);
                 obj.rect = Rect::from_min_size(obj.rect.min, (galley.size() * ppp).max(Vec2::splat(MIN_SIZE)));
             }
+            if let Kind::Arrow { start, end } = obj.kind {
+                obj.rect = Rect::from_two_pos(start, end);
+            }
             let rect = to_screen(obj.rect);
-            if selecting && !editing {
-                let id = egui::Id::unique(("object", obj.id));
-                let response = ui.interact(rect.expand(4.0), id, Sense::click_and_drag());
+            let id = egui::Id::unique(("object", obj.id));
+            // Arrows are only grabbed near their line, not anywhere in their bounding box.
+            let hit = match obj.kind {
+                Kind::Arrow { start, end } => {
+                    let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+                        distance_to_segment(p, to_screen_pos(start), to_screen_pos(end))
+                            <= ARROW_HIT_DISTANCE
+                    });
+                    near || ui.ctx().is_being_dragged(id)
+                }
+                _ => true,
+            };
+            if selecting && !editing && hit {
+                let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, Sense::click_and_drag());
                 if response.clicked() || response.drag_started() {
                     self.selected = Some(obj.id);
                 }
@@ -226,31 +255,30 @@ impl DeerawApp {
                     self.focus_editor = true;
                 }
                 if response.dragged() {
-                    obj.rect = obj.rect.translate(response.drag_delta() * ppp);
+                    obj.translate(response.drag_delta() * ppp);
                 }
                 if response.hovered() || response.dragged() {
                     ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
             if !editing {
-                paint_object(&painter, obj, rect, ppp);
+                paint_object(&painter, obj, rect, to_screen_pos, ppp);
             }
         }
 
         match &self.drawing {
             Some(Drawing::Stroke(points)) => {
-                let points = points.iter().map(|p| origin + p.to_vec2() / ppp).collect();
+                let points = points.iter().map(|p| to_screen_pos(*p)).collect();
                 painter.line(points, Stroke::new(LINE_WIDTH / ppp, INK));
             }
             Some(Drawing::Arrow(start, end)) => {
-                let (start, end) = (origin + start.to_vec2() / ppp, origin + end.to_vec2() / ppp);
-                paint_arrow(&painter, start, end, ppp);
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), ppp);
             }
             None => {}
         }
 
         if selecting && self.capture.is_none() {
-            self.selection_handles(ui, to_screen, to_canvas);
+            self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, ppp);
         }
         self.text_editor(ui, origin, ppp);
         if self.capture.is_none() {
@@ -261,6 +289,11 @@ impl DeerawApp {
     /// What a click or drag on empty canvas does with the current tool.
     fn handle_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
         let pointer = background.interact_pointer_pos().map(&to_canvas);
+        // The cursor image is sticky between frames, so it must be cleared explicitly.
+        let drawing_tool = matches!(self.tool, Tool::Pencil | Tool::Arrow);
+        let crosshair = (drawing_tool && background.hovered())
+            .then(|| self.crosshair.get_or_insert_with(crosshair_cursor).clone());
+        background.ctx.set_cursor_image(crosshair);
         match self.tool {
             Tool::Select => {
                 if background.clicked() {
@@ -268,9 +301,6 @@ impl DeerawApp {
                 }
             }
             Tool::Pencil | Tool::Arrow => {
-                if background.hovered() {
-                    background.ctx.set_cursor_icon(CursorIcon::Crosshair);
-                }
                 if let (true, Some(p)) = (background.drag_started(), pointer) {
                     self.drawing = Some(match self.tool {
                         Tool::Pencil => Drawing::Stroke(vec![p]),
@@ -315,8 +345,7 @@ impl DeerawApp {
                 self.add(rect, Kind::Stroke { points });
             }
             Some(Drawing::Arrow(start, end)) if start.distance(end) >= MIN_SIZE => {
-                let (rect, points) = normalize(&[start, end]);
-                self.add(rect, Kind::Arrow { start: points[0], end: points[1] });
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end });
                 self.tool = Tool::Select;
             }
             _ => {}
@@ -327,12 +356,33 @@ impl DeerawApp {
         &mut self,
         ui: &mut egui::Ui,
         to_screen: impl Fn(Rect) -> Rect,
+        to_screen_pos: impl Fn(Pos2) -> Pos2,
         to_canvas: impl Fn(Pos2) -> Pos2,
+        ppp: f32,
     ) {
         let Some(obj) = self.objects.iter_mut().find(|o| Some(o.id) == self.selected) else {
             return;
         };
         if self.editing == Some(obj.id) {
+            return;
+        }
+        if let Kind::Arrow { start, end } = &mut obj.kind {
+            // Arrows get a handle per endpoint instead of a resize box.
+            for (i, point) in [start, end].into_iter().enumerate() {
+                let center = to_screen_pos(*point);
+                let id = egui::Id::unique(("point-handle", obj.id, i));
+                let hit = Rect::from_center_size(center, Vec2::splat(POINT_HANDLE_RADIUS * 2.0 + 4.0));
+                let response = ui.interact(hit, id, Sense::drag());
+                if response.dragged() {
+                    *point += response.drag_delta() * ppp;
+                }
+                if response.hovered() || response.dragged() {
+                    ui.ctx().set_cursor_icon(CursorIcon::Grab);
+                }
+                let painter = ui.painter();
+                painter.circle_filled(center, POINT_HANDLE_RADIUS, Color32::WHITE);
+                painter.circle_stroke(center, POINT_HANDLE_RADIUS, Stroke::new(1.5, SELECTION_COLOR));
+            }
             return;
         }
         let rect = to_screen(obj.rect);
@@ -502,7 +552,34 @@ impl DeerawApp {
     }
 }
 
-fn paint_object(painter: &Painter, obj: &Object, rect: Rect, ppp: f32) {
+/// A crosshair cursor: black lines with a white outline, so it shows on any background.
+/// (The stock Windows crosshair can be invisible over the canvas.)
+fn crosshair_cursor() -> egui::CustomCursorImage {
+    const SIZE: usize = 23;
+    const MID: usize = SIZE / 2;
+    let mut rgba = vec![0u8; SIZE * SIZE * 4];
+    let mut set = |x: usize, y: usize, value: u8| {
+        rgba[(y * SIZE + x) * 4..][..4].copy_from_slice(&[value, value, value, 255]);
+    };
+    // White outline first (3px wide arms), then the black 1px arms on top.
+    for i in 0..SIZE {
+        for offset in [MID - 1, MID + 1] {
+            set(i, offset, 255);
+            set(offset, i, 255);
+        }
+    }
+    for i in 0..SIZE {
+        set(i, MID, 0);
+        set(MID, i, 0);
+    }
+    egui::CustomCursorImage {
+        rgba: rgba.into(),
+        size: [SIZE as u16; 2],
+        hotspot: [MID as u16; 2],
+    }
+}
+
+fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, ppp: f32) {
     let stroke = Stroke::new(LINE_WIDTH / ppp, INK);
     match &obj.kind {
         Kind::Image { texture } => {
@@ -514,9 +591,7 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, ppp: f32) {
             painter.line(points, stroke);
         }
         Kind::Arrow { start, end } => {
-            let start = rect.lerp_inside(start.to_vec2());
-            let end = rect.lerp_inside(end.to_vec2());
-            paint_arrow(painter, start, end, ppp);
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), ppp);
         }
         Kind::Text { text, font_px } => {
             let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px / ppp), INK);
@@ -538,6 +613,13 @@ fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, ppp: f32) {
     let spread = Rot2::from_angle(0.45);
     painter.line_segment([end, end + spread * back], stroke);
     painter.line_segment([end, end + spread.inverse() * back], stroke);
+}
+
+/// Distance from `p` to the line segment `a`-`b`.
+fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
+    let ab = b - a;
+    let t = ((p - a).dot(ab) / ab.length_sq().max(f32::EPSILON)).clamp(0.0, 1.0);
+    p.distance(a + ab * t)
 }
 
 /// Returns the bounding box of `points` (at least `MIN_SIZE` on each axis)
@@ -634,6 +716,14 @@ mod tests {
 
         let r = resize_to(rect(0.0, 0.0, 200.0, 100.0), 0, -1, Pos2::new(0.0, 10.0), 2.0, true);
         assert_eq!(r, rect(0.0, 10.0, 200.0, 90.0));
+    }
+
+    #[test]
+    fn segment_distance() {
+        let (a, b) = (Pos2::new(0.0, 0.0), Pos2::new(10.0, 0.0));
+        assert_eq!(distance_to_segment(Pos2::new(5.0, 3.0), a, b), 3.0);
+        assert_eq!(distance_to_segment(Pos2::new(14.0, 3.0), a, b), 5.0);
+        assert_eq!(distance_to_segment(Pos2::new(1.0, 1.0), a, a), 2f32.sqrt());
     }
 
     #[test]

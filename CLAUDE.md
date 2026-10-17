@@ -37,10 +37,13 @@ Keep this list up to date as features are built.
    undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
    vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
-   Min size 4px. Delete removes the selected object. Hit-testing uses the bounding box.
+   Min size 4px. Delete removes the selected object. Hit-testing uses the bounding box, except
+   arrows (see below).
 4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Text.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
-   - Arrow: drag from start to end; switches back to Select afterwards.
+   - Arrow: drag from start to end; switches back to Select afterwards. Arrows are point-to-point:
+     selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
+     They're grabbed only within 6pt of the line.
    - Text: click to place a text box and type (multi-line). Escape or clicking elsewhere finishes;
      empty text is discarded. Double-click a text object to edit it. Text has only corner handles
      (resizing scales the font). Switches back to Select afterwards.
@@ -50,8 +53,9 @@ Keep this list up to date as features are built.
 - All code in `src/main.rs`; only dependency is eframe 0.37. Edition 2024. `cargo test` covers the
   resize math (`resize_to`).
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels (physical pixels, not egui
-  points; origin = central panel's top-left), so a fresh image paste displays 1:1. Stroke and
-  arrow points are normalized (0..1) to `rect`, so move/resize only change `rect`. Text `rect`
+  points; origin = central panel's top-left), so a fresh image paste displays 1:1. Stroke points
+  are normalized (0..1) to `rect`, so move/resize only change `rect`. Arrow endpoints are stored
+  in canvas pixels and `rect` is re-derived from them each frame; use `Object::translate` to move. Text `rect`
   is re-synced to the text layout every frame; resizing text scales `font_px`.
 - Copy uses `ctx.request_screenshot` (arrives a frame later) rather than CPU rendering.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
@@ -60,6 +64,8 @@ Keep this list up to date as features are built.
   no text) and `ctx.copy_image()` writes PNG via arboard.
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
   toolbar icons visually.
+- Pencil/Arrow use a custom bitmap crosshair (`ctx.set_cursor_image`, which is sticky, so it's
+  cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared.
 - From WSL, run Windows cargo via `powershell.exe` (`$env:USERPROFILE\.cargo\bin\cargo.exe`).
 - Git repo on `master`; commit after each working step.
 
