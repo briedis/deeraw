@@ -12,7 +12,7 @@ mod stroke;
 mod style;
 mod widgets;
 
-use eframe::egui;
+use eframe::{egui, egui_wgpu};
 
 use app::DeerawApp;
 
@@ -27,6 +27,10 @@ fn main() -> eframe::Result {
             .with_icon(
                 eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG"),
             ),
+        // eframe's default (vsync, 1 queued frame) makes dragging the window choppy on Windows:
+        // every move repaints and blocks on vsync. Two queued frames keep it smooth.
+        wgpu_options: egui_wgpu::WgpuConfiguration::default()
+            .with_surface_config(egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT),
         ..Default::default()
     };
     eframe::run_native(
