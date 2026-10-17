@@ -57,14 +57,18 @@ const FIT_MIN_WINDOW: Vec2 = Vec2::new(800.0, 600.0);
 /// The fitted window may take at most this fraction of the screen; bigger images get zoomed out.
 const FIT_MAX_SCREEN: f32 = 0.75;
 
+/// Window/taskbar icon and the About window's logo; rendered from `assets/deer.svg`.
+const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+/// Image files File > Open accepts (what the `image` crate is built to decode).
+const OPEN_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
+
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("Deeraw")
             .with_inner_size([1024.0, 768.0])
             .with_icon(
-                eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png"))
-                    .expect("bundled icon is a valid PNG"),
+                eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG"),
             ),
         ..Default::default()
     };
@@ -345,10 +349,17 @@ struct DeerawApp {
     show_layers: bool,
     /// Last frame's canvas panel position, to keep the drawing still when the panel moves.
     canvas_min: Option<Pos2>,
-    /// Ctrl+C or Ctrl+S was pressed; see `export_step`.
+    /// Copy, Cut or Save as was requested; see `export_step`.
     export: Option<Export>,
-    /// Folder of the last Ctrl+S save, where the next save dialog opens.
+    /// Folder of the last opened or saved file, where the next file dialog opens.
     save_dir: Option<PathBuf>,
+    /// Image from File > Open, added by `canvas` (which knows where to put it).
+    opened: Option<Arc<ColorImage>>,
+    /// Frame of the last Edit > Paste: that paste goes to the canvas center, not under the
+    /// pointer (which is still where the menu was).
+    menu_paste_frame: Option<u64>,
+    show_about: bool,
+    about_logo: Option<egui::TextureHandle>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
     i_beam: Option<egui::CustomCursorImage>,
@@ -369,6 +380,7 @@ impl eframe::App for DeerawApp {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
             self.show_layers = !self.show_layers;
         }
+        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.show_layers {
             egui::Panel::left("layers")
                 .resizable(true)
@@ -381,6 +393,7 @@ impl eframe::App for DeerawApp {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(fill))
             .show(ui, |ui| self.canvas(ui));
+        self.about_window(ui.ctx());
 
         if let Some(export) = self.export.take() {
             self.export_step(ui.ctx(), frame, export);
@@ -467,23 +480,26 @@ impl DeerawApp {
             for event in ui.input(|i| i.events.clone()) {
                 match event {
                     egui::Event::PasteImage(image) => {
+                        let from_menu = self
+                            .menu_paste_frame
+                            .take()
+                            .is_some_and(|frame| ui.ctx().cumulative_frame_nr() <= frame + 2);
                         let center = ui
                             .input(|i| i.pointer.hover_pos())
-                            .filter(|p| canvas_rect.contains(*p))
+                            .filter(|p| canvas_rect.contains(*p) && !from_menu)
                             .unwrap_or(canvas_rect.center());
-                        let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
-                        if self.objects.is_empty() && self.fit_window(ui.ctx(), size, canvas_rect) {
-                            self.add_image(ui.ctx(), image, (size / 2.0).to_pos2());
-                        } else {
-                            self.add_image(ui.ctx(), image, to_canvas(center));
-                        }
+                        self.place_image(ui.ctx(), image, center, canvas_rect, to_canvas);
                     }
                     egui::Event::Copy if !self.objects.is_empty() => {
-                        self.export = Some(Export { step: ExportStep::LayOut, target: ExportTarget::Clipboard });
+                        self.export = Some(Export::new(self.objects.clone(), ExportTarget::Clipboard));
+                    }
+                    egui::Event::Cut if !self.selected.is_empty() => {
+                        let cut = self.objects.iter().filter(|o| self.selected.contains(&o.id)).cloned().collect();
+                        self.export = Some(Export::new(cut, ExportTarget::Clipboard));
+                        self.delete_selected();
                     }
                     egui::Event::Key { key: egui::Key::Delete | egui::Key::Backspace, pressed: true, .. } => {
-                        let selected = std::mem::take(&mut self.selected);
-                        self.objects.retain(|obj| !selected.contains(&obj.id));
+                        self.delete_selected();
                     }
                     egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.is_none() => {
                         // Escape first just ends a crop; otherwise it also deselects.
@@ -516,10 +532,8 @@ impl DeerawApp {
                             egui::Key::Y => self.history.redo(&mut self.objects),
                             egui::Key::D => self.duplicate_selected(),
                             egui::Key::S => self.save_as(),
-                            egui::Key::A => {
-                                self.tool = Tool::Select;
-                                self.selected = self.objects.iter().map(|o| o.id).collect();
-                            }
+                            egui::Key::O => self.open_file(),
+                            egui::Key::A => self.select_all(),
                             _ => {}
                         }
                         let objects = &self.objects;
@@ -528,6 +542,9 @@ impl DeerawApp {
                     _ => {}
                 }
             }
+        }
+        if let Some(image) = self.opened.take() {
+            self.place_image(ui.ctx(), image, canvas_rect.center(), canvas_rect, to_canvas);
         }
 
         // Widgets registered later win the hit test: background, then objects
@@ -1517,10 +1534,152 @@ impl DeerawApp {
         true
     }
 
-    /// Bounding box of all objects, in canvas pixels.
-    fn bounds(&self) -> Option<Rect> {
-        let first = self.objects.first()?;
-        Some(self.objects.iter().fold(first.rect, |acc, obj| acc.union(obj.rect)))
+    /// Adds a pasted or opened image centered on `center` (screen), or, on an empty canvas,
+    /// fits the window to it.
+    fn place_image(
+        &mut self,
+        ctx: &egui::Context,
+        image: Arc<ColorImage>,
+        center: Pos2,
+        canvas_rect: Rect,
+        to_canvas: impl Fn(Pos2) -> Pos2,
+    ) {
+        let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
+        if self.objects.is_empty() && self.fit_window(ctx, size, canvas_rect) {
+            self.add_image(ctx, image, (size / 2.0).to_pos2());
+        } else {
+            self.add_image(ctx, image, to_canvas(center));
+        }
+    }
+
+    fn delete_selected(&mut self) {
+        let selected = std::mem::take(&mut self.selected);
+        self.objects.retain(|obj| !selected.contains(&obj.id));
+    }
+
+    fn select_all(&mut self) {
+        self.tool = Tool::Select;
+        self.selected = self.objects.iter().map(|o| o.id).collect();
+    }
+
+    /// File > Open (Ctrl+O): picks an image file and decodes it; `canvas` adds it.
+    fn open_file(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Open image")
+            .add_filter("Images", &OPEN_EXTENSIONS);
+        if let Some(dir) = &self.save_dir {
+            dialog = dialog.set_directory(dir);
+        }
+        let Some(path) = dialog.pick_file() else { return };
+        self.save_dir = path.parent().map(Path::to_path_buf);
+        match image::open(&path) {
+            Ok(image) => {
+                let rgba = image.to_rgba8();
+                let size = [rgba.width() as usize, rgba.height() as usize];
+                self.opened = Some(Arc::new(ColorImage::from_rgba_unmultiplied(size, rgba.as_raw())));
+            }
+            Err(err) => {
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("Couldn't open image")
+                    .set_description(format!("{}\n\n{err}", path.display()))
+                    .show();
+            }
+        }
+    }
+
+    /// File, Edit and Help menus. Cut/Copy/Paste go through egui's clipboard events, so they
+    /// act on a text being edited just like the keyboard shortcuts do.
+    fn menu_bar(&mut self, ui: &mut egui::Ui) {
+        use egui::{Key, KeyboardShortcut, Modifiers, ViewportCommand};
+        let command = |key| Some(KeyboardShortcut::new(Modifiers::COMMAND, key));
+        let has_objects = !self.objects.is_empty();
+        let has_selection = !self.selected.is_empty();
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("File", |ui| {
+                if menu_item(ui, "Open image…", command(Key::O), true) {
+                    self.open_file();
+                }
+                if menu_item(ui, "Save as…", command(Key::S), has_objects) {
+                    self.save_as();
+                }
+                ui.separator();
+                if menu_item(ui, "Exit", None, true) {
+                    ui.send_viewport_cmd(ViewportCommand::Close);
+                }
+            });
+            ui.menu_button("Edit", |ui| {
+                if menu_item(ui, "Undo", command(Key::Z), true) {
+                    self.history.undo(&mut self.objects);
+                }
+                if menu_item(ui, "Redo", command(Key::Y), true) {
+                    self.history.redo(&mut self.objects);
+                }
+                ui.separator();
+                if menu_item(ui, "Cut", command(Key::X), has_selection) {
+                    ui.send_viewport_cmd(ViewportCommand::RequestCut);
+                }
+                if menu_item(ui, "Copy", command(Key::C), has_objects) {
+                    ui.send_viewport_cmd(ViewportCommand::RequestCopy);
+                }
+                if menu_item(ui, "Paste", command(Key::V), true) {
+                    self.menu_paste_frame = Some(ui.ctx().cumulative_frame_nr());
+                    ui.send_viewport_cmd(ViewportCommand::RequestPaste);
+                }
+                let delete = Some(KeyboardShortcut::new(Modifiers::NONE, Key::Delete));
+                if menu_item(ui, "Delete", delete, has_selection) {
+                    self.delete_selected();
+                }
+                ui.separator();
+                if menu_item(ui, "Select all", command(Key::A), has_objects) {
+                    self.select_all();
+                }
+                if menu_item(ui, "Duplicate", command(Key::D), has_selection) {
+                    self.duplicate_selected();
+                }
+            });
+            ui.menu_button("Help", |ui| {
+                if menu_item(ui, "About Deeraw", None, true) {
+                    self.show_about = true;
+                }
+            });
+        });
+        let objects = &self.objects;
+        self.selected.retain(|id| objects.iter().any(|o| o.id == *id));
+    }
+
+    fn about_window(&mut self, ctx: &egui::Context) {
+        if !self.show_about {
+            return;
+        }
+        let logo = self.about_logo.get_or_insert_with(|| {
+            let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG");
+            let size = [icon.width as usize, icon.height as usize];
+            let image = ColorImage::from_rgba_unmultiplied(size, &icon.rgba);
+            ctx.load_texture("about-logo", image, egui::TextureOptions::LINEAR)
+        });
+        let logo = egui::Image::new(&*logo).fit_to_exact_size(Vec2::splat(96.0));
+        let mut open = true;
+        egui::Window::new("About Deeraw")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_min_width(260.0);
+                ui.vertical_centered(|ui| {
+                    ui.add_space(8.0);
+                    ui.add(logo);
+                    ui.add_space(4.0);
+                    ui.heading("Deeraw");
+                    ui.label(env!("CARGO_PKG_DESCRIPTION"));
+                    ui.add_space(8.0);
+                    ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                    ui.weak(format!("by {}", env!("CARGO_PKG_AUTHORS")));
+                    ui.add_space(8.0);
+                });
+            });
+        self.show_about = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
     }
 
     /// Ctrl+S: asks where to save (named after the current local time), then exports there.
@@ -1541,15 +1700,15 @@ impl DeerawApp {
             path.set_extension("png");
         }
         self.save_dir = path.parent().map(Path::to_path_buf);
-        self.export = Some(Export { step: ExportStep::LayOut, target: ExportTarget::File(path) });
+        self.export = Some(Export::new(self.objects.clone(), ExportTarget::File(path)));
     }
 
-    /// Exporting renders all objects offscreen at 1 canvas pixel per image pixel (less only if
+    /// Exporting renders the export's objects offscreen at 1 canvas pixel per image pixel (less only if
     /// that exceeds the GPU's texture size limit), whatever the view. Text needs its glyphs in
     /// the GPU font atlas, which is only uploaded at the end of a frame, so the first step just
     /// lays everything out and the render happens a frame later.
     fn export_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, export: Export) {
-        let (Some(bounds), Some(render_state)) = (self.bounds(), frame.wgpu_render_state()) else {
+        let (Some(bounds), Some(render_state)) = (bounds(&export.objects), frame.wgpu_render_state()) else {
             return;
         };
         let region = bounds.expand(EXPORT_PADDING);
@@ -1557,7 +1716,7 @@ impl DeerawApp {
         let pixel_scale = (max_size / region.size().max_elem()).min(1.0);
         let size = (region.size() * pixel_scale).ceil();
         let ppp = ctx.pixels_per_point();
-        let shapes = self.export_shapes(ctx, region, pixel_scale / ppp, size / ppp);
+        let shapes = export_shapes(ctx, &export.objects, region, pixel_scale / ppp, size / ppp);
         if let ExportStep::LayOut = export.step {
             self.export = Some(Export { step: ExportStep::Render, ..export });
             ctx.request_repaint();
@@ -1581,26 +1740,47 @@ impl DeerawApp {
         }
     }
 
-    /// Paints every object with `region` (canvas pixels) at the origin and `scale` points per
-    /// canvas pixel, into a throwaway layer whose shapes are returned instead of shown.
-    fn export_shapes(&self, ctx: &egui::Context, region: Rect, scale: f32, size: Vec2) -> Vec<egui::epaint::ClippedShape> {
-        let layer = egui::LayerId::new(egui::Order::Background, egui::Id::unique("export"));
-        let painter = Painter::new(ctx.clone(), layer, Rect::from_min_size(Pos2::ZERO, size));
-        let to_screen_pos = |p: Pos2| Pos2::ZERO + (p - region.min) * scale;
-        for obj in &self.objects {
-            let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
-            paint_object(&painter, obj, rect, to_screen_pos, scale);
-        }
-        ctx.graphics_mut(|graphics| {
-            let list = std::mem::take(graphics.entry(layer));
-            list.all_entries().cloned().collect()
-        })
+}
+
+/// Bounding box of `objects`, in canvas pixels.
+fn bounds(objects: &[Object]) -> Option<Rect> {
+    let first = objects.first()?;
+    Some(objects.iter().fold(first.rect, |acc, obj| acc.union(obj.rect)))
+}
+
+/// Paints `objects` with `region` (canvas pixels) at the origin and `scale` points per
+/// canvas pixel, into a throwaway layer whose shapes are returned instead of shown.
+fn export_shapes(
+    ctx: &egui::Context,
+    objects: &[Object],
+    region: Rect,
+    scale: f32,
+    size: Vec2,
+) -> Vec<egui::epaint::ClippedShape> {
+    let layer = egui::LayerId::new(egui::Order::Background, egui::Id::unique("export"));
+    let painter = Painter::new(ctx.clone(), layer, Rect::from_min_size(Pos2::ZERO, size));
+    let to_screen_pos = |p: Pos2| Pos2::ZERO + (p - region.min) * scale;
+    for obj in objects {
+        let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
+        paint_object(&painter, obj, rect, to_screen_pos, scale);
     }
+    ctx.graphics_mut(|graphics| {
+        let list = std::mem::take(graphics.entry(layer));
+        list.all_entries().cloned().collect()
+    })
 }
 
 struct Export {
     step: ExportStep,
     target: ExportTarget,
+    /// What to render, taken when the export was requested (Cut removes them right away).
+    objects: Vec<Object>,
+}
+
+impl Export {
+    fn new(objects: Vec<Object>, target: ExportTarget) -> Self {
+        Self { step: ExportStep::LayOut, target, objects }
+    }
 }
 
 enum ExportStep {
@@ -1725,6 +1905,15 @@ fn paint_checkerboard(painter: &Painter, rect: Rect, cell: f32, gray: u8) {
 }
 
 /// A selectable color button; `None` shows a checkerboard (transparent). Returns whether it was clicked.
+/// A menu entry with its keyboard shortcut shown on the right; true when clicked.
+fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: Option<egui::KeyboardShortcut>, enabled: bool) -> bool {
+    let mut button = egui::Button::new(label);
+    if let Some(shortcut) = shortcut {
+        button = button.shortcut_text(ui.ctx().format_shortcut(&shortcut));
+    }
+    ui.add_enabled(enabled, button).clicked()
+}
+
 fn color_swatch(ui: &mut egui::Ui, selected: bool, name: &str, color: Option<Color32>) -> bool {
     let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
     let response = ui.add(button).on_hover_text(name);

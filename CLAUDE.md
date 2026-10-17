@@ -104,9 +104,20 @@ Keep this list up to date as features are built.
    selected object that has that setting (undoable) and also becomes the default. A mixed
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width.
 
+9. **Menu bar** — top of the window (`menu_bar`).
+   - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
+     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Exit.
+   - Edit: Undo, Redo, Cut, Copy, Paste, Delete, Select all, Duplicate, with shortcuts shown. Cut/Copy/Paste
+     send `ViewportCommand::Request*`, so they produce the same clipboard events as the keys (and act on
+     text being edited). A menu Paste goes to the canvas center, not under the pointer.
+   - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
+     everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
+   - Help: About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
+     (`authors`), read with `env!`. Escape or × closes it.
+
 ## Current state
 
-- All code in `src/main.rs`. Dependencies: eframe 0.37, rfd (file/message dialogs), png (already
+- All code in `src/main.rs`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   resize math (`resize_to`).
