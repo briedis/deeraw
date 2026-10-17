@@ -234,6 +234,7 @@ impl DeerawApp {
         let toolbar = self.toolbar(ui, canvas_rect);
         self.style_panel(ui, toolbar);
         self.corner_controls(ui, canvas_rect, ppp);
+        self.update_title(ui.ctx());
         self.notice(ui, canvas_rect);
         // Set last so it wins over hover cursors of whatever is under the pointer.
         if self.panning {

@@ -36,6 +36,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      A tooltip-style notice next to the pointer (canvas center if it's elsewhere) confirms it with the
      image's resolution and PNG size (from our own encoding, `encode_png`; the clipboard encodes separately,
      so it's approximate), for 2.5s with a fade (`notice`). Cut shows it too.
+   - The window title shows the drawing's size live, "Deeraw (1280 × 720)" (`update_title`), from the
+     objects' rects, so it can be a few px larger than the trimmed copy. Just "Deeraw" when empty.
 2. **Layers panel** — hidden by default; Ctrl+L toggles it (works anywhere, even while typing). Resizable left panel listing every object, topmost first, with its
    position, size and kind-specific info (source size, point count, font size). Doubles as a
    debug view. Clicking a row selects it. Showing/hiding/resizing it doesn't move the drawing

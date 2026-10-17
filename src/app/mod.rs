@@ -99,6 +99,8 @@ pub struct DeerawApp {
     /// pointer (which is still where the menu was).
     menu_paste_frame: Option<u64>,
     notice: Option<Notice>,
+    /// Last window title sent; see `update_title`.
+    title: Option<String>,
     show_about: bool,
     about_logo: Option<egui::TextureHandle>,
     /// Built once: the OS caches custom cursors by buffer identity.

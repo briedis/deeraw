@@ -3,6 +3,7 @@
 use eframe::egui::{self, Align2, CursorIcon, Pos2, Rect, Sense, Vec2};
 
 use super::{DeerawApp, Tool};
+use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::Kind;
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection};
@@ -93,6 +94,22 @@ impl DeerawApp {
                 egui::Frame::popup(ui.style()).show(ui, |ui| ui.label(&notice.text));
             });
         ui.ctx().request_repaint();
+    }
+
+    /// The window title shows the size of the drawing, from the objects' rects, so a copy
+    /// (trimmed to visible pixels) can come out a little smaller.
+    pub(super) fn update_title(&mut self, ctx: &egui::Context) {
+        let title = match bounds(&self.objects) {
+            Some(bounds) => {
+                let size = bounds.size().ceil();
+                format!("Deeraw ({} × {})", size.x, size.y)
+            }
+            None => "Deeraw".to_owned(),
+        };
+        if self.title.as_ref() != Some(&title) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+            self.title = Some(title);
+        }
     }
 
     /// Bottom-right of the canvas: background picker and zoom level.
