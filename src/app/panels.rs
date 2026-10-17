@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::Kind;
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection};
-use crate::widgets::{align_button, align_name, color_swatch, pen_button, size_button};
+use crate::widgets::{Icon, align_button, align_name, color_swatch, icon_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -284,7 +284,10 @@ impl DeerawApp {
                             let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
                             self.style_toggle(StyleSection::Color, |open| color_swatch(ui, open, name, Some(color)));
                             for &(kind, size) in &sizes {
-                                self.style_toggle(StyleSection::Size(kind), |open| size_button(ui, open, kind, size));
+                                self.style_toggle(StyleSection::Size(kind), |open| match kind {
+                                    SizeKind::Line => icon_button(ui, open, Icon::StrokeWidth, 14.0, &format!("Line width: {size:.0}px")),
+                                    SizeKind::Font => size_button(ui, open, kind, size),
+                                });
                             }
                             if show_pen {
                                 self.style_toggle(StyleSection::Pen, |open| pen_button(ui, open, hand_drawn));
@@ -386,22 +389,21 @@ impl DeerawApp {
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        for (tool, label, hint) in [
-                            (Tool::Select, "↖ Select", "Select (V)"),
-                            (Tool::Pencil, "✏ Pencil", "Pencil (P)"),
-                            (Tool::Arrow, "➡ Arrow", "Arrow (A)"),
-                            (Tool::Line, "— Line", "Line (L)"),
-                            (Tool::Text, "T Text", "Text (T)"),
+                        for (tool, icon, hint) in [
+                            (Tool::Select, Icon::Select, "Select (V)"),
+                            (Tool::Pencil, Icon::Pencil, "Pencil (P)"),
+                            (Tool::Arrow, Icon::Arrow, "Arrow (A)"),
+                            (Tool::Line, Icon::Line, "Line (L)"),
+                            (Tool::Text, Icon::Text, "Text (T)"),
                         ] {
-                            if ui.selectable_label(self.tool == tool, label).on_hover_text(hint).clicked() {
+                            if icon_button(ui, self.tool == tool, icon, 20.0, hint) {
                                 self.tool = tool;
                             }
                         }
                         // Only offered while an image is selected (or being cropped).
                         if self.cropping.is_some() || self.selected_image().is_some() {
                             ui.separator();
-                            let crop = egui::Button::selectable(self.cropping.is_some(), "✂ Crop");
-                            if ui.add(crop).on_hover_text("Crop image (C, or double-click it)").clicked() {
+                            if icon_button(ui, self.cropping.is_some(), Icon::Crop, 20.0, "Crop image (C, or double-click it)") {
                                 self.toggle_crop();
                             }
                         }

@@ -1,6 +1,6 @@
 //! Small custom buttons for the menus and the style panel.
 
-use eframe::egui::{self, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2};
+use eframe::egui::{self, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
 
 use crate::paint::paint_checkerboard;
 use crate::stroke::paint_hand_drawn;
@@ -96,5 +96,66 @@ pub fn align_button(ui: &mut egui::Ui, selected: bool, align: Align2) -> bool {
     ui.painter().rect_stroke(frame, 1.0, Stroke::new(1.0, color.gamma_multiply(0.5)), StrokeKind::Inside);
     let block = align.align_size_within_rect(Vec2::new(8.0, 4.0), frame.shrink(2.0));
     ui.painter().rect_filled(block, 0.0, color);
+    response.clicked()
+}
+
+/// A button icon, traced from the Deeraw icon set.
+#[derive(Clone, Copy)]
+pub enum Icon {
+    Select,
+    Pencil,
+    Arrow,
+    Line,
+    Text,
+    Crop,
+    StrokeWidth,
+}
+
+/// The icon set's stroke width, on its 32×32 grid.
+const W: f32 = 2.5;
+
+impl Icon {
+    /// Its strokes on a 32×32 grid: points, whether the stroke is closed, and its width.
+    fn strokes(self) -> &'static [(&'static [[f32; 2]], bool, f32)] {
+        match self {
+            Icon::Select => &[(&[[6.0, 6.0], [27.0, 14.0], [18.0, 18.0], [14.0, 27.0]], true, W)],
+            Icon::Pencil => &[
+                (&[[24.0, 4.0], [28.0, 8.0], [10.0, 26.0], [4.0, 28.0], [6.0, 22.0]], true, W),
+                (&[[18.0, 10.0], [22.0, 14.0]], false, W),
+            ],
+            Icon::Arrow => &[(&[[6.0, 26.0], [26.0, 6.0]], false, W), (&[[14.0, 6.0], [26.0, 6.0], [26.0, 18.0]], false, W)],
+            Icon::Line => &[(&[[4.0, 16.0], [28.0, 16.0]], false, W)],
+            Icon::Text => &[
+                (&[[7.0, 10.0], [7.0, 6.0], [25.0, 6.0], [25.0, 10.0]], false, W),
+                (&[[16.0, 6.0], [16.0, 26.0]], false, W),
+                (&[[12.0, 26.0], [20.0, 26.0]], false, W),
+            ],
+            Icon::Crop => &[
+                (&[[8.0, 3.0], [8.0, 24.0], [29.0, 24.0]], false, W),
+                (&[[24.0, 29.0], [24.0, 8.0], [3.0, 8.0]], false, W),
+                (&[[8.0, 24.0], [27.0, 5.0]], false, W),
+            ],
+            Icon::StrokeWidth => &[
+                (&[[5.0, 9.0], [27.0, 9.0]], false, 3.5),
+                (&[[5.0, 16.0], [27.0, 16.0]], false, 3.5),
+                (&[[5.0, 23.0], [27.0, 23.0]], false, 3.5),
+            ],
+        }
+    }
+}
+
+/// A selectable button showing `icon` at `size` points; true when clicked.
+pub fn icon_button(ui: &mut egui::Ui, selected: bool, icon: Icon, size: f32, hint: &str) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(size) + Vec2::new(12.0, 8.0));
+    let response = ui.add(button).on_hover_text(hint);
+    let origin = response.rect.center() - Vec2::splat(size / 2.0);
+    let scale = size / 32.0;
+    let color = ui.visuals().text_color();
+    for &(points, closed, width) in icon.strokes() {
+        let points = points.iter().map(|&[x, y]| origin + Vec2::new(x, y) * scale).collect();
+        let stroke = Stroke::new(width * scale, color);
+        let path = if closed { PathShape::closed_line(points, stroke) } else { PathShape::line(points, stroke) };
+        ui.painter().add(path);
+    }
     response.clicked()
 }
