@@ -37,13 +37,17 @@ Keep this list up to date as features are built.
    undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
    vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
-   Min size 4px. Delete removes the selected object(s).
+   Min size 4px. Delete removes the selected object(s); Ctrl+D duplicates them (copies offset by
+   20px, on top, and selected). Ctrl+A selects everything (and switches to Select).
    **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
    dragging on empty canvas draws a selection box that selects objects entirely inside it
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
 4. **Toolbar** — floating at the bottom of the canvas: Select, Pencil, Arrow, Line, Text.
+   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text;
+   Escape goes back to Select. Switching tools cancels a half-drawn shape or selection box.
+   Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke; stays in Pencil mode.
    - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
@@ -52,7 +56,8 @@ Keep this list up to date as features are built.
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
      lines break at the box width and the text is aligned inside it (9 alignments, picked in the
-     style panel); the box grows taller if the text overflows. All 8 handles resize the box freely
+     style panel) over a background (transparent by default, or a palette color, also in the style
+     panel); the box grows taller if the text overflows. All 8 handles resize the box freely
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
      Double-click a text object to edit it. Switches back to Select afterwards.
 5. **Pan & zoom** — middle-button drag pans. Mouse wheel zooms around the cursor; Ctrl +/- zoom

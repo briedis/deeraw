@@ -40,6 +40,8 @@ const MAX_ZOOM_LEVEL: i32 = 20;
 const WHEEL_POINTS_PER_STEP: f32 = 50.0;
 /// How many undo steps are kept.
 const MAX_UNDO: usize = 200;
+/// How far Ctrl+D copies are moved from the original, in canvas pixels.
+const DUPLICATE_OFFSET: f32 = 20.0;
 /// Margin around the content when copying the canvas, in canvas pixels.
 const EXPORT_PADDING: f32 = 10.0;
 
@@ -102,6 +104,8 @@ struct TextFrame {
     /// Canvas pixels.
     size: Vec2,
     align: Align2,
+    /// Background; `None` is transparent.
+    fill: Option<Color32>,
 }
 
 /// Which part of the style panel is expanded.
@@ -110,6 +114,7 @@ enum StyleSection {
     Color,
     Size(SizeKind),
     Align,
+    Fill,
 }
 
 /// Which size the style panel edits.
@@ -127,11 +132,12 @@ struct Style {
     font_px: f32,
     /// For text boxes.
     align: Align2,
+    fill: Option<Color32>,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], align: Align2::LEFT_TOP }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], align: Align2::LEFT_TOP, fill: None }
     }
 }
 
@@ -165,6 +171,14 @@ impl Object {
     fn align_mut(&mut self) -> Option<&mut Align2> {
         match &mut self.kind {
             Kind::Text { frame: Some(frame), .. } => Some(&mut frame.align),
+            _ => None,
+        }
+    }
+
+    /// Background, for text boxes only.
+    fn fill_mut(&mut self) -> Option<&mut Option<Color32>> {
+        match &mut self.kind {
+            Kind::Text { frame: Some(frame), .. } => Some(&mut frame.fill),
             _ => None,
         }
     }
@@ -417,11 +431,32 @@ impl DeerawApp {
                         let selected = std::mem::take(&mut self.selected);
                         self.objects.retain(|obj| !selected.contains(&obj.id));
                     }
+                    egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.is_none() => {
+                        let tool = match key {
+                            egui::Key::V | egui::Key::Escape => Some(Tool::Select),
+                            egui::Key::P => Some(Tool::Pencil),
+                            egui::Key::A => Some(Tool::Arrow),
+                            egui::Key::L => Some(Tool::Line),
+                            egui::Key::T => Some(Tool::Text),
+                            _ => None,
+                        };
+                        if let Some(tool) = tool {
+                            self.tool = tool;
+                            // Escape (or any tool switch) also cancels a half-drawn shape.
+                            self.drawing = None;
+                            self.marquee = None;
+                        }
+                    }
                     egui::Event::Key { key, pressed: true, modifiers, .. } if modifiers.command => {
                         match key {
                             egui::Key::Z if modifiers.shift => self.history.redo(&mut self.objects),
                             egui::Key::Z => self.history.undo(&mut self.objects),
                             egui::Key::Y => self.history.redo(&mut self.objects),
+                            egui::Key::D => self.duplicate_selected(),
+                            egui::Key::A => {
+                                self.tool = Tool::Select;
+                                self.selected = self.objects.iter().map(|o| o.id).collect();
+                            }
                             _ => {}
                         }
                         let objects = &self.objects;
@@ -701,15 +736,20 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].align_mut().map(|a| *a))
             .unwrap_or(self.style.align);
+        let fill = targets
+            .iter()
+            .find_map(|&i| self.objects[i].fill_mut().map(|f| *f))
+            .unwrap_or(self.style.fill);
         match self.style_open {
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
-            Some(StyleSection::Align) if !show_align => self.style_open = None,
+            Some(StyleSection::Align | StyleSection::Fill) if !show_align => self.style_open = None,
             _ => {}
         }
 
         let mut new_color = None;
         let mut new_size = None;
         let mut new_align = None;
+        let mut new_fill = None;
         egui::Area::new(egui::Id::unique("style"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
@@ -735,6 +775,16 @@ impl DeerawApp {
                                     for option in options {
                                         if size_button(ui, current == Some(option), kind, option) {
                                             new_size = Some((kind, option));
+                                        }
+                                    }
+                                }
+                                StyleSection::Fill => {
+                                    if color_swatch(ui, fill.is_none(), "Transparent", None) {
+                                        new_fill = Some(None);
+                                    }
+                                    for (swatch, name) in PALETTE {
+                                        if color_swatch(ui, fill == Some(swatch), name, Some(swatch)) {
+                                            new_fill = Some(Some(swatch));
                                         }
                                     }
                                 }
@@ -764,13 +814,21 @@ impl DeerawApp {
                             }
                             if show_align {
                                 self.style_toggle(StyleSection::Align, |open| align_button(ui, open, align));
+                                let name = match fill {
+                                    None => "Background: transparent".to_owned(),
+                                    Some(fill) => {
+                                        let name = PALETTE.iter().find(|(c, _)| *c == fill).map_or("color", |(_, n)| n);
+                                        format!("Background: {name}")
+                                    }
+                                };
+                                self.style_toggle(StyleSection::Fill, |open| color_swatch(ui, open, &name, fill));
                             }
                         });
                     });
                 });
             });
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() {
             return;
         }
         self.style_open = None;
@@ -779,6 +837,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(c) = self.objects[i].color_mut() {
                     *c = color;
+                }
+            }
+        }
+        if let Some(fill) = new_fill {
+            self.style.fill = fill;
+            for &i in &targets {
+                if let Some(f) = self.objects[i].fill_mut() {
+                    *f = fill;
                 }
             }
         }
@@ -922,9 +988,9 @@ impl DeerawApp {
 
     /// Adds an empty text object (at `min`, or as the box `frame`) and starts editing it.
     fn start_text(&mut self, min: Pos2, frame: Option<Vec2>) {
-        let Style { font_px, color, align, .. } = self.style;
+        let Style { font_px, color, align, fill, .. } = self.style;
         let rect = Rect::from_min_size(min, frame.unwrap_or(Vec2::splat(MIN_SIZE)));
-        let frame = frame.map(|size| TextFrame { size, align });
+        let frame = frame.map(|size| TextFrame { size, align, fill });
         let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, frame });
         self.editing = Some(id);
         self.focus_editor = true;
@@ -1086,8 +1152,12 @@ impl DeerawApp {
             Some(f) => (obj.rect.size() * scale, f.align),
             None => (Vec2::splat(1.0), Align2::LEFT_TOP),
         };
-        if screen_frame.is_some() {
+        if let Some(frame) = screen_frame {
+            // The object itself isn't painted while being edited.
             let outline = Rect::from_min_size(to_screen_pos(obj.rect.min), box_size);
+            if let Some(fill) = frame.fill {
+                ui.painter().rect_filled(outline, 0.0, fill);
+            }
             let stroke = Stroke::new(1.0, SELECTION_COLOR.gamma_multiply(0.5));
             ui.painter().rect_stroke(outline, 0.0, stroke, StrokeKind::Outside);
         }
@@ -1134,14 +1204,14 @@ impl DeerawApp {
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        for (tool, label) in [
-                            (Tool::Select, "↖ Select"),
-                            (Tool::Pencil, "✏ Pencil"),
-                            (Tool::Arrow, "➡ Arrow"),
-                            (Tool::Line, "— Line"),
-                            (Tool::Text, "T Text"),
+                        for (tool, label, hint) in [
+                            (Tool::Select, "↖ Select", "Select (V)"),
+                            (Tool::Pencil, "✏ Pencil", "Pencil (P)"),
+                            (Tool::Arrow, "➡ Arrow", "Arrow (A)"),
+                            (Tool::Line, "— Line", "Line (L)"),
+                            (Tool::Text, "T Text", "Text (T)"),
                         ] {
-                            if ui.selectable_label(self.tool == tool, label).clicked() {
+                            if ui.selectable_label(self.tool == tool, label).on_hover_text(hint).clicked() {
                                 self.tool = tool;
                             }
                         }
@@ -1150,6 +1220,19 @@ impl DeerawApp {
             })
             .response
             .rect
+    }
+
+    /// Copies the selected objects on top, offset a little, and selects the copies.
+    fn duplicate_selected(&mut self) {
+        let copies: Vec<Object> = self.objects.iter().filter(|o| self.selected.contains(&o.id)).cloned().collect();
+        self.selected.clear();
+        for mut copy in copies {
+            copy.id = self.next_id;
+            self.next_id += 1;
+            copy.translate(Vec2::splat(DUPLICATE_OFFSET));
+            self.selected.push(copy.id);
+            self.objects.push(copy);
+        }
     }
 
     /// Adds an object on top and selects it.
@@ -1311,6 +1394,9 @@ fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl
         }
         Kind::Text { text, font_px, color, frame } => {
             let frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
+            if let Some(fill) = frame.and_then(|f| f.fill) {
+                painter.rect_filled(rect, 0.0, fill);
+            }
             let galley = layout_text(painter, text, font_px * scale, *color, frame);
             // Same placement as `TextEdit` uses, so editing doesn't shift the text.
             let align = frame.map_or(Align2::LEFT_TOP, |f| f.align);
