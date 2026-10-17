@@ -113,7 +113,7 @@ Keep this list up to date as features are built.
    - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
    - Help: About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
-     (`authors`), read with `env!`. Escape or × closes it.
+     (`authors`), read with `env!`. Escape or × closes it It also links the license.
 
 ## Current state
 
@@ -154,6 +154,9 @@ Keep this list up to date as features are built.
 - Pencil/Arrow/Line use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
   cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared.
 - From WSL, run Windows cargo via `powershell.exe` (`$env:USERPROFILE\.cargo\bin\cargo.exe`).
+- License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
+  must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
+  product that competes with Deeraw. Source-available, not OSI open source.
 - Git repo on `master`; commit after each working step.
 
 ## Planned next steps

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "An opinionated drawing app"
 authors = ["Mārtiņš Briedis"]
+license = "PolyForm-Shield-1.0.0"
 
 [dependencies]
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }

@@ -1677,6 +1677,12 @@ impl DeerawApp {
                     ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
                     ui.weak(format!("by {}", env!("CARGO_PKG_AUTHORS")));
                     ui.add_space(8.0);
+                    ui.weak("Free to use, at home or at work, under the");
+                    ui.hyperlink_to(
+                        "PolyForm Shield License 1.0.0",
+                        "https://polyformproject.org/licenses/shield/1.0.0",
+                    );
+                    ui.add_space(8.0);
                 });
             });
         self.show_about = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
