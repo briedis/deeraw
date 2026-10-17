@@ -6,11 +6,12 @@ use std::sync::Arc;
 use eframe::egui::{self, ColorImage, Pos2, Rect, Vec2};
 
 use super::{DeerawApp, MIN_ZOOM_LEVEL, ZOOM_STEP};
-use crate::export::{Export, ExportStep, ExportTarget, bounds, export_shapes, render_offscreen, write_png};
+use crate::export::{Export, ExportStep, ExportTarget, bounds, export_shapes, render_offscreen, trim, write_png};
 use crate::object::Kind;
 
-/// Margin around the content when copying the canvas, in canvas pixels.
-const EXPORT_PADDING: f32 = 10.0;
+/// Room rendered around the objects' rects when exporting, in canvas pixels, so line widths and
+/// arrow heads sticking out of them aren't cut off. The image is trimmed afterwards.
+const EXPORT_MARGIN: f32 = 40.0;
 /// Free space around the first pasted image when the window is fitted to it, in points.
 const FIT_MARGIN: f32 = 80.0;
 /// The window is never fitted smaller than this (inner size, in points), so the UI still fits.
@@ -137,12 +138,13 @@ impl DeerawApp {
     /// Exporting renders the export's objects offscreen at 1 canvas pixel per image pixel (less only if
     /// that exceeds the GPU's texture size limit), whatever the view. Text needs its glyphs in
     /// the GPU font atlas, which is only uploaded at the end of a frame, so the first step just
-    /// lays everything out and the render happens a frame later.
+    /// lays everything out and the render happens a frame later. The image is trimmed to the
+    /// pixels that differ from the background.
     pub(super) fn export_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, export: Export) {
         let (Some(bounds), Some(render_state)) = (bounds(&export.objects), frame.wgpu_render_state()) else {
             return;
         };
-        let region = bounds.expand(EXPORT_PADDING);
+        let region = bounds.expand(EXPORT_MARGIN);
         let max_size = render_state.device.limits().max_texture_dimension_2d as f32;
         let pixel_scale = (max_size / region.size().max_elem()).min(1.0);
         let size = (region.size() * pixel_scale).ceil();
@@ -157,6 +159,8 @@ impl DeerawApp {
         let clear = self.background.color().map_or([0.0; 4], |c| c.to_normalized_gamma_f32());
         let size = [size.x as u32, size.y as u32];
         let Some(image) = render_offscreen(render_state, &primitives, size, ppp, clear) else { return };
+        // The corner is in the margin, so it's the background exactly as rendered.
+        let image = trim(&image, image.pixels[0]);
         match export.target {
             ExportTarget::Clipboard => ctx.copy_image(image),
             ExportTarget::File(path) => {

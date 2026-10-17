@@ -72,6 +72,22 @@ pub fn write_png(path: &Path, image: &ColorImage) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
+/// Crops `image` to the pixels that aren't `background`; unchanged if there are none.
+pub fn trim(image: &ColorImage, background: Color32) -> ColorImage {
+    let [width, height] = image.size;
+    let visible = |x: usize, y: usize| image.pixels[y * width + x] != background;
+    let rows: Vec<usize> = (0..height).filter(|&y| (0..width).any(|x| visible(x, y))).collect();
+    let cols: Vec<usize> = (0..width).filter(|&x| (0..height).any(|y| visible(x, y))).collect();
+    let (Some(&top), Some(&bottom), Some(&left), Some(&right)) = (rows.first(), rows.last(), cols.first(), cols.last())
+    else {
+        return image.clone();
+    };
+    let pixels = (top..=bottom)
+        .flat_map(|y| image.pixels[y * width + left..=y * width + right].iter().copied())
+        .collect();
+    ColorImage::new([right - left + 1, bottom - top + 1], pixels)
+}
+
 /// Renders tessellated shapes into an offscreen texture with egui's own wgpu renderer (so it
 /// shares the font atlas and image textures) and reads it back. `size` is in pixels.
 pub fn render_offscreen(
@@ -161,6 +177,24 @@ pub fn render_offscreen(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn trim_keeps_only_non_background_pixels() {
+        let (o, x) = (Color32::WHITE, Color32::RED);
+        #[rustfmt::skip]
+        let pixels = vec![
+            o, o, o, o,
+            o, x, o, o,
+            o, o, x, o,
+            o, o, o, o,
+        ];
+        let trimmed = trim(&ColorImage::new([4, 4], pixels), o);
+        assert_eq!(trimmed.size, [2, 2]);
+        assert_eq!(trimmed.pixels, [x, o, o, x]);
+
+        let blank = ColorImage::new([2, 1], vec![o, o]);
+        assert_eq!(trim(&blank, o).size, [2, 1]);
+    }
 
     #[test]
     fn png_is_written_unmultiplied() {

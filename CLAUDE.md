@@ -31,7 +31,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      exceed 75% of the screen, it zooms out (20% steps) until it fits. Skipped when maximized or
      fullscreen. The window isn't moved, so a big one can extend past the screen edge.
    - Ctrl+C copies everything (not just what's visible) as a PNG cropped to the content's bounding
-     box (+10px padding), at 1 canvas pixel per PNG pixel whatever the zoom (scaled down only past
+     box, trimmed to the pixels that differ from the background (no padding), at 1 canvas pixel per PNG pixel whatever the zoom (scaled down only past
      the GPU's max texture size). No selection or UI in it. Clipboard gets PNG + DIB formats.
 2. **Layers panel** — hidden by default; Ctrl+L toggles it (works anywhere, even while typing). Resizable left panel listing every object, topmost first, with its
    position, size and kind-specific info (source size, point count, font size). Doubles as a
