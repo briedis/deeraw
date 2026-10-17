@@ -1,0 +1,113 @@
+# Builds Deeraw for Windows (x64 .exe) and macOS (universal .app, zipped).
+# Every push/PR uploads the builds as workflow artifacts; pushing a `v*` tag also publishes
+# them as a GitHub release.
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
+      - run: cargo build --release
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item target/release/deeraw.exe dist/
+          Copy-Item LICENSE.md dist/
+          Compress-Archive -Path dist/* -DestinationPath deeraw-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deeraw-windows-x64
+          path: deeraw-windows-x64.zip
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --release
+      - run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+      - name: Bundle Deeraw.app
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          APP=Deeraw.app
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          lipo -create -output "$APP/Contents/MacOS/deeraw" \
+            target/aarch64-apple-darwin/release/deeraw \
+            target/x86_64-apple-darwin/release/deeraw
+
+          # Icon: render assets/icon.png (256px) into an .icns.
+          ICONSET=$(mktemp -d)/deeraw.iconset
+          mkdir "$ICONSET"
+          for size in 16 32 128 256; do
+            sips -z $size $size assets/icon.png --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+            double=$((size * 2))
+            if [ $double -le 256 ]; then
+              sips -z $double $double assets/icon.png --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+            fi
+          done
+          iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/deeraw.icns"
+
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>Deeraw</string>
+            <key>CFBundleDisplayName</key><string>Deeraw</string>
+            <key>CFBundleIdentifier</key><string>com.briedis.deeraw</string>
+            <key>CFBundleExecutable</key><string>deeraw</string>
+            <key>CFBundleIconFile</key><string>deeraw</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>${VERSION}</string>
+            <key>CFBundleShortVersionString</key><string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          EOF
+
+          # Ad-hoc signature: Apple Silicon refuses to run unsigned binaries at all.
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --keepParent "$APP" deeraw-macos-universal.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deeraw-macos-universal
+          path: deeraw-macos-universal.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
