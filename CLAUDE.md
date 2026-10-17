@@ -54,6 +54,10 @@ Keep this list up to date as features are built.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
    change to objects: paste, draw, text, move, resize, arrow points, delete. Not in history:
    selection, tool, pan/zoom.
+7. **Canvas background** — picker at the bottom-right (next to the zoom box): transparent
+   (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
+   transparent, the PNG has real alpha (canvas fill and the window clear color are transparent
+   for the capture frame, and the screenshot keeps alpha). Not in undo history.
 
 ## Current state
 

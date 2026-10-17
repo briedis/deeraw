@@ -157,6 +157,25 @@ impl History {
     }
 }
 
+#[derive(Clone, Copy, Default, PartialEq)]
+enum Background {
+    Transparent,
+    #[default]
+    White,
+    Black,
+}
+
+impl Background {
+    /// `None` for transparent.
+    fn color(self) -> Option<Color32> {
+        match self {
+            Background::Transparent => None,
+            Background::White => Some(Color32::WHITE),
+            Background::Black => Some(Color32::BLACK),
+        }
+    }
+}
+
 #[derive(Default)]
 struct DeerawApp {
     /// Bottom to top: later objects are drawn on top.
@@ -183,6 +202,7 @@ struct DeerawApp {
     panning: bool,
     /// Wheel movement not yet turned into a whole zoom step.
     wheel: f32,
+    background: Background,
 }
 
 impl eframe::App for DeerawApp {
@@ -192,10 +212,21 @@ impl eframe::App for DeerawApp {
             .default_size(220.0)
             .show(ui, |ui| self.layers_panel(ui));
 
-        let frame = egui::Frame::new().fill(Color32::WHITE);
+        // Transparent shows a checkerboard on screen (painted in `canvas`), but nothing at all
+        // while copying, so the screenshot keeps the alpha.
+        let fill = self.background.color().unwrap_or(Color32::TRANSPARENT);
         egui::CentralPanel::default()
-            .frame(frame)
+            .frame(egui::Frame::new().fill(fill))
             .show(ui, |ui| self.canvas(ui));
+    }
+
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // The screenshot has the window's alpha, so a transparent copy needs a transparent clear.
+        if self.capture.is_some() && self.background == Background::Transparent {
+            [0.0; 4]
+        } else {
+            egui::Visuals::light().panel_fill.to_normalized_gamma_f32()
+        }
     }
 }
 
@@ -298,6 +329,9 @@ impl DeerawApp {
         self.handle_tool(&background, to_canvas);
 
         let painter = ui.painter().clone();
+        if self.background == Background::Transparent && self.capture.is_none() {
+            paint_checkerboard(&painter, canvas_rect);
+        }
         let selecting = self.tool == Tool::Select;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
@@ -361,7 +395,7 @@ impl DeerawApp {
         self.text_editor(ui, to_screen_pos, scale);
         if self.capture.is_none() {
             self.toolbar(ui, canvas_rect);
-            self.zoom_indicator(ui, canvas_rect, ppp);
+            self.corner_controls(ui, canvas_rect, ppp);
         }
         // Set last so it wins over hover cursors of whatever is under the pointer.
         if self.panning {
@@ -444,22 +478,51 @@ impl DeerawApp {
         self.pan = pan_for_zoom(self.pan, anchor - canvas_rect.min, old_scale, self.zoom() / ppp);
     }
 
-    /// Shows the zoom level; clicking it resets to 100% around the canvas center.
-    fn zoom_indicator(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
-        let label = format!("{:.0}%", self.zoom() * 100.0);
-        let clicked = egui::Area::new(egui::Id::unique("zoom"))
+    /// Bottom-right of the canvas: background picker and zoom level.
+    fn corner_controls(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
+        egui::Area::new(egui::Id::unique("corner"))
             .pivot(Align2::RIGHT_BOTTOM)
             .fixed_pos(canvas_rect.right_bottom() - Vec2::splat(16.0))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style())
-                    .show(ui, |ui| ui.add(egui::Label::new(label).sense(Sense::click())))
-                    .inner
-                    .on_hover_cursor(CursorIcon::PointingHand)
-                    .on_hover_text("Reset to 100%")
-                    .clicked()
-            })
-            .inner;
+                ui.horizontal(|ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| self.background_picker(ui));
+                    egui::Frame::popup(ui.style()).show(ui, |ui| self.zoom_indicator(ui, canvas_rect, ppp));
+                });
+            });
+    }
+
+    fn background_picker(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            for (background, name) in [
+                (Background::Transparent, "Transparent background"),
+                (Background::White, "White background"),
+                (Background::Black, "Black background"),
+            ] {
+                let button = egui::Button::selectable(self.background == background, "")
+                    .min_size(Vec2::splat(22.0));
+                let response = ui.add(button).on_hover_text(name);
+                let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+                match background.color() {
+                    Some(color) => _ = ui.painter().rect_filled(swatch, 2.0, color),
+                    None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch),
+                }
+                ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), egui::StrokeKind::Outside);
+                if response.clicked() {
+                    self.background = background;
+                }
+            }
+        });
+    }
+
+    /// Shows the zoom level; clicking it resets to 100% around the canvas center.
+    fn zoom_indicator(&mut self, ui: &mut egui::Ui, canvas_rect: Rect, ppp: f32) {
+        let label = format!("{:.0}%", self.zoom() * 100.0);
+        let clicked = ui
+            .add(egui::Label::new(label).sense(Sense::click()))
+            .on_hover_cursor(CursorIcon::PointingHand)
+            .on_hover_text("Reset to 100%")
+            .clicked();
         if clicked && self.zoom_level != 0 {
             let old_scale = self.zoom() / ppp;
             self.zoom_level = 0;
@@ -732,6 +795,20 @@ impl DeerawApp {
         let Some(screenshot) = self.screenshot.lock().unwrap().take() else { return };
         if let Some(region) = self.capture.take() {
             ctx.copy_image(screenshot.region(&region, Some(ppp)));
+        }
+    }
+}
+
+/// Light-gray checkerboard (screen-aligned) standing in for a transparent background.
+fn paint_checkerboard(painter: &Painter, rect: Rect) {
+    const CELL: f32 = 8.0;
+    painter.rect_filled(rect, 0.0, Color32::WHITE);
+    let cols = (rect.width() / CELL).ceil() as i32;
+    let rows = (rect.height() / CELL).ceil() as i32;
+    for row in 0..rows {
+        for col in (row % 2..cols).step_by(2) {
+            let min = rect.min + Vec2::new(col as f32, row as f32) * CELL;
+            painter.rect_filled(Rect::from_min_size(min, Vec2::splat(CELL)), 0.0, Color32::from_gray(242));
         }
     }
 }
