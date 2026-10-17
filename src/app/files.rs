@@ -1,5 +1,6 @@
 //! Images in and out: pasting/opening (and fitting the window), saving and exporting.
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ const FIT_MIN_WINDOW: Vec2 = Vec2::new(800.0, 600.0);
 /// The fitted window may take at most this fraction of the screen; bigger images get zoomed out.
 const FIT_MAX_SCREEN: f32 = 0.75;
 /// Image files File > Open accepts (what the `image` crate is built to decode).
+#[cfg(not(target_arch = "wasm32"))]
 const OPEN_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 
 impl DeerawApp {
@@ -88,7 +90,8 @@ impl DeerawApp {
         }
     }
 
-    /// File > Open (Ctrl+O): picks an image file and decodes it; `canvas` adds it.
+    /// File > Open (Ctrl+O): picks an image file and decodes it; `canvas` adds it. Native only.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn open_file(&mut self) {
         let mut dialog = rfd::FileDialog::new()
             .set_title("Open image")
@@ -115,6 +118,8 @@ impl DeerawApp {
     }
 
     /// Ctrl+S: asks where to save (named after the current local time), then exports there.
+    /// Native only.
+    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn save_as(&mut self) {
         if self.objects.is_empty() {
             return;

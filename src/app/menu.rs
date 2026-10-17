@@ -15,6 +15,8 @@ impl DeerawApp {
         let has_objects = !self.objects.is_empty();
         let has_selection = !self.selected.is_empty();
         egui::MenuBar::new().ui(ui, |ui| {
+            // The browser has no file dialogs and nothing to exit.
+            #[cfg(not(target_arch = "wasm32"))]
             ui.menu_button("File", |ui| {
                 if menu_item(ui, "Open image…", command(Key::O), true) {
                     self.open_file();
@@ -72,9 +74,9 @@ impl DeerawApp {
             return;
         }
         let logo = self.about_logo.get_or_insert_with(|| {
-            let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG");
-            let size = [icon.width as usize, icon.height as usize];
-            let image = ColorImage::from_rgba_unmultiplied(size, &icon.rgba);
+            let icon = image::load_from_memory(ICON_PNG).expect("bundled icon is a valid PNG").to_rgba8();
+            let size = [icon.width() as usize, icon.height() as usize];
+            let image = ColorImage::from_rgba_unmultiplied(size, icon.as_raw());
             ctx.load_texture("about-logo", image, egui::TextureOptions::LINEAR)
         });
         let logo = egui::Image::new(&*logo).fit_to_exact_size(Vec2::splat(96.0));

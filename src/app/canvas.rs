@@ -89,7 +89,9 @@ impl DeerawApp {
                             egui::Key::Z => self.history.undo(&mut self.objects),
                             egui::Key::Y => self.history.redo(&mut self.objects),
                             egui::Key::D => self.duplicate_selected(),
+                            #[cfg(not(target_arch = "wasm32"))]
                             egui::Key::S => self.save_as(),
+                            #[cfg(not(target_arch = "wasm32"))]
                             egui::Key::O => self.open_file(),
                             egui::Key::A => self.select_all(),
                             _ => {}

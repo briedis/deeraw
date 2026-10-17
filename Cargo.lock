@@ -733,6 +733,8 @@ dependencies = [
  "image",
  "png",
  "rfd",
+ "wasm-bindgen-futures",
+ "web-sys",
  "winresource",
 ]
 

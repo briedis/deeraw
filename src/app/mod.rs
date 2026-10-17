@@ -92,6 +92,7 @@ pub struct DeerawApp {
     /// Copy, Cut or Save as was requested; see `export_step`.
     export: Option<Export>,
     /// Folder of the last opened or saved file, where the next file dialog opens.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     save_dir: Option<PathBuf>,
     /// Image from File > Open, added by `canvas` (which knows where to put it).
     opened: Option<Arc<ColorImage>>,

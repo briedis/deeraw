@@ -56,6 +56,8 @@ pub enum ExportStep {
 
 pub enum ExportTarget {
     Clipboard,
+    /// Save as; the web build has no file dialog to ask for one.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     File(PathBuf),
 }
 

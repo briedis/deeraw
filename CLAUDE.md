@@ -11,6 +11,11 @@ Build **very incrementally**: one small, runnable step at a time. Each step shou
 - Develop on Windows. The project lives at `C:\dev\deeraw`.
 - Toolchain: rustup with the MSVC target (`x86_64-pc-windows-msvc`), which needs the Visual Studio C++ Build Tools.
 - Build/run: `cargo run`. Release build: `cargo build --release` → `target\release\deeraw.exe`.
+- Web build: needs `rustup target add wasm32-unknown-unknown` and Trunk (`trunk.exe` in `~\.cargo\bin`,
+  from its GitHub releases). `trunk serve --release` serves it at http://127.0.0.1:8080; `trunk build --release`
+  writes static files to `dist/` (ignored by git). `index.html` holds the `<canvas id="deeraw">` that `main.rs`'s
+  wasm `main` starts the app in. The web build has no File menu and no Ctrl+O/Ctrl+S (no blocking file
+  dialogs in the browser): those parts are `#[cfg(not(target_arch = "wasm32"))]`.
 
 ### First-time setup on a new machine
 
@@ -128,7 +133,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 ## Current state
 
-- Code layout (`src/`): `main.rs` (window setup, `mod`s), `object.rs` (`Object`, `Kind`, `TextFrame`),
+- Code layout (`src/`): `main.rs` (native window / web canvas setup, `mod`s), `object.rs` (`Object`, `Kind`, `TextFrame`),
   `style.rs` (`Style`, palette/sizes, `Background`), `history.rs` (undo), `geometry.rs` (resize/crop/zoom math),
   `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `export.rs`
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
