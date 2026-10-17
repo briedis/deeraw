@@ -1,3 +1,6 @@
+// Release builds are GUI-only on Windows (no console window); debug builds keep it for logs.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 

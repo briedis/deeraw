@@ -20,7 +20,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --release
@@ -32,7 +32,7 @@ jobs:
           Copy-Item target/release/deeraw.exe dist/
           Copy-Item LICENSE.md dist/
           Compress-Archive -Path dist/* -DestinationPath deeraw-windows-x64.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: deeraw-windows-x64
           path: deeraw-windows-x64.zip
@@ -40,7 +40,7 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin, x86_64-apple-darwin
@@ -92,7 +92,7 @@ jobs:
           # Ad-hoc signature: Apple Silicon refuses to run unsigned binaries at all.
           codesign --force --deep --sign - "$APP"
           ditto -c -k --keepParent "$APP" deeraw-macos-universal.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: deeraw-macos-universal
           path: deeraw-macos-universal.zip
@@ -104,7 +104,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true

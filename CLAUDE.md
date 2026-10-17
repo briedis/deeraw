@@ -157,6 +157,8 @@ Keep this list up to date as features are built.
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
   must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
   product that competes with Deeraw. Source-available, not OSI open source.
+- Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
+- CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip) on every push/PR; a `v*` tag publishes a release.
 - Git repo on `master`; commit after each working step.
 
 ## Planned next steps
