@@ -58,6 +58,13 @@ Keep this list up to date as features are built.
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
    transparent, the PNG has real alpha (canvas fill and the window clear color are transparent
    for the capture frame, and the screenshot keeps alpha). Not in undo history.
+8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow or Text is active,
+   or while a stroke, arrow or text is selected. It shows the current color and size; clicking
+   either expands its options upwards (picking one collapses it again). Colors: black, white,
+   red, orange, green, blue. Size: line width (2/3/6/10px, for pencil and arrows) or font size
+   (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px).
+   With a drawing tool it sets the style of new objects; with a selection it restyles that object
+   (undoable) and also becomes the default. Arrow heads grow with the line width.
 
 ## Current state
 

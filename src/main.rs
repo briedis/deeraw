@@ -6,17 +6,26 @@ use eframe::egui::{
 };
 
 const SELECTION_COLOR: Color32 = Color32::from_rgb(105, 101, 219);
-const INK: Color32 = Color32::BLACK;
 /// Size of a resize handle, in points.
 const HANDLE_SIZE: f32 = 8.0;
 /// Smallest width/height an object can have, in canvas pixels.
 const MIN_SIZE: f32 = 4.0;
-/// Line width of pencil strokes and arrows, in canvas pixels.
-const LINE_WIDTH: f32 = 3.0;
-/// Length of an arrow's head lines, in canvas pixels.
-const ARROW_HEAD: f32 = 18.0;
-/// Font size of new text, in canvas pixels.
-const TEXT_SIZE: f32 = 28.0;
+/// Colors offered by the style panel; the first is the default.
+const PALETTE: [(Color32, &str); 6] = [
+    (Color32::BLACK, "Black"),
+    (Color32::WHITE, "White"),
+    (Color32::from_rgb(224, 49, 49), "Red"),
+    (Color32::from_rgb(240, 140, 0), "Orange"),
+    (Color32::from_rgb(47, 158, 68), "Green"),
+    (Color32::from_rgb(25, 113, 194), "Blue"),
+];
+/// Line widths (pencil strokes and arrows) offered by the style panel, in canvas pixels.
+const LINE_WIDTHS: [f32; 4] = [2.0, 3.0, 6.0, 10.0];
+/// Font sizes offered by the style panel, in canvas pixels.
+const FONT_SIZES: [f32; 4] = [16.0, 28.0, 44.0, 64.0];
+/// Length of an arrow's head lines, in canvas pixels: base plus this much per pixel of line width.
+const ARROW_HEAD: f32 = 12.0;
+const ARROW_HEAD_PER_WIDTH: f32 = 2.0;
 /// How close (in points) the pointer must be to an arrow's line to grab it.
 const ARROW_HIT_DISTANCE: f32 = 6.0;
 /// Radius of an arrow's endpoint handles, in points.
@@ -74,19 +83,79 @@ struct Object {
 enum Kind {
     Image { texture: TextureHandle },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
-    Stroke { points: Vec<Pos2> },
+    Stroke { points: Vec<Pos2>, color: Color32, width: f32 },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
-    Arrow { start: Pos2, end: Pos2 },
+    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32 },
     /// `rect` follows the laid-out text; resizing scales `font_px`.
-    Text { text: String, font_px: f32 },
+    Text { text: String, font_px: f32, color: Color32 },
+}
+
+/// Which part of the style panel is expanded.
+#[derive(Clone, Copy, PartialEq)]
+enum StyleSection {
+    Color,
+    Size,
+}
+
+/// Which size the style panel edits.
+#[derive(Clone, Copy, PartialEq)]
+enum SizeKind {
+    /// Pencil strokes and arrows.
+    Line,
+    Font,
+}
+
+/// Color and sizes for new objects, set from the style panel.
+struct Style {
+    color: Color32,
+    line_width: f32,
+    font_px: f32,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1] }
+    }
 }
 
 impl Object {
     fn translate(&mut self, delta: Vec2) {
         self.rect = self.rect.translate(delta);
-        if let Kind::Arrow { start, end } = &mut self.kind {
+        if let Kind::Arrow { start, end, .. } = &mut self.kind {
             *start += delta;
             *end += delta;
+        }
+    }
+
+    /// What the style panel edits for this object; `None` for images.
+    fn size_kind(&self) -> Option<SizeKind> {
+        match self.kind {
+            Kind::Image { .. } => None,
+            Kind::Stroke { .. } | Kind::Arrow { .. } => Some(SizeKind::Line),
+            Kind::Text { .. } => Some(SizeKind::Font),
+        }
+    }
+
+    /// Color and size (line width or font size); `None` for images.
+    fn style(&self) -> Option<(Color32, f32)> {
+        match &self.kind {
+            Kind::Image { .. } => None,
+            Kind::Stroke { color, width, .. } | Kind::Arrow { color, width, .. } => Some((*color, *width)),
+            Kind::Text { color, font_px, .. } => Some((*color, *font_px)),
+        }
+    }
+
+    fn set_style(&mut self, new_color: Color32, size: f32) {
+        match &mut self.kind {
+            Kind::Image { .. } => {}
+            Kind::Stroke { color, width, .. } | Kind::Arrow { color, width, .. } => {
+                *color = new_color;
+                *width = size;
+            }
+            Kind::Text { color, font_px, .. } => {
+                *color = new_color;
+                *font_px = size;
+            }
         }
     }
 
@@ -203,6 +272,8 @@ struct DeerawApp {
     /// Wheel movement not yet turned into a whole zoom step.
     wheel: f32,
     background: Background,
+    style: Style,
+    style_open: Option<StyleSection>,
 }
 
 impl eframe::App for DeerawApp {
@@ -257,9 +328,11 @@ impl DeerawApp {
                         let [w, h] = texture.size();
                         info += &format!("\nsource {w}×{h}");
                     }
-                    Kind::Stroke { points } => info += &format!("\n{} points", points.len()),
+                    Kind::Stroke { points, width, .. } => {
+                        info += &format!("\n{} points, width {width:.0}px", points.len())
+                    }
                     Kind::Text { font_px, .. } => info += &format!("\nfont {font_px:.0}px"),
-                    Kind::Arrow { .. } => {}
+                    Kind::Arrow { width, .. } => info += &format!("\nwidth {width:.0}px"),
                 }
                 ui.weak(info);
             }
@@ -335,23 +408,23 @@ impl DeerawApp {
         let selecting = self.tool == Tool::Select;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
-            if let Kind::Text { text, font_px } = &obj.kind {
+            if let Kind::Text { text, font_px, color } = &obj.kind {
                 // Keep the rect in sync with the text layout. Measured at a fixed scale (1 point
                 // per canvas pixel) so zooming doesn't change it.
-                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(*font_px), INK);
+                let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(*font_px), *color);
                 obj.rect = Rect::from_min_size(obj.rect.min, galley.size().max(Vec2::splat(MIN_SIZE)));
             }
-            if let Kind::Arrow { start, end } = obj.kind {
+            if let Kind::Arrow { start, end, .. } = obj.kind {
                 obj.rect = Rect::from_two_pos(start, end);
             }
             let rect = to_screen(obj.rect);
             let id = egui::Id::unique(("object", obj.id));
             // Arrows are only grabbed near their line, not anywhere in their bounding box.
             let hit = match obj.kind {
-                Kind::Arrow { start, end } => {
+                Kind::Arrow { start, end, width, .. } => {
                     let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
                         distance_to_segment(p, to_screen_pos(start), to_screen_pos(end))
-                            <= ARROW_HIT_DISTANCE
+                            <= ARROW_HIT_DISTANCE + width * scale / 2.0
                     });
                     near || ui.ctx().is_being_dragged(id)
                 }
@@ -381,10 +454,11 @@ impl DeerawApp {
         match &self.drawing {
             Some(Drawing::Stroke(points)) => {
                 let points = points.iter().map(|p| to_screen_pos(*p)).collect();
-                painter.line(points, Stroke::new(LINE_WIDTH * scale, INK));
+                painter.line(points, Stroke::new(self.style.line_width * scale, self.style.color));
             }
             Some(Drawing::Arrow(start, end)) => {
-                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), scale);
+                let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale);
             }
             None => {}
         }
@@ -394,7 +468,8 @@ impl DeerawApp {
         }
         self.text_editor(ui, to_screen_pos, scale);
         if self.capture.is_none() {
-            self.toolbar(ui, canvas_rect);
+            let toolbar = self.toolbar(ui, canvas_rect);
+            self.style_panel(ui, toolbar);
             self.corner_controls(ui, canvas_rect, ppp);
         }
         // Set last so it wins over hover cursors of whatever is under the pointer.
@@ -499,20 +574,94 @@ impl DeerawApp {
                 (Background::White, "White background"),
                 (Background::Black, "Black background"),
             ] {
-                let button = egui::Button::selectable(self.background == background, "")
-                    .min_size(Vec2::splat(22.0));
-                let response = ui.add(button).on_hover_text(name);
-                let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
-                match background.color() {
-                    Some(color) => _ = ui.painter().rect_filled(swatch, 2.0, color),
-                    None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch, 3.5, 150),
-                }
-                ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), egui::StrokeKind::Outside);
-                if response.clicked() {
+                let clicked = color_swatch(ui, self.background == background, name, background.color());
+                if clicked {
                     self.background = background;
                 }
             }
         });
+    }
+
+    /// Just above the toolbar: the current color and line width / font size. Clicking either
+    /// expands its options upwards. Shown for the drawing tools (sets the style of new objects)
+    /// and for a selected stroke, arrow or text (restyles it).
+    fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
+        let selected = self.objects.iter().position(|o| self.tool == Tool::Select && Some(o.id) == self.selected);
+        let size_kind = match self.tool {
+            Tool::Pencil | Tool::Arrow => Some(SizeKind::Line),
+            Tool::Text => Some(SizeKind::Font),
+            Tool::Select => selected.and_then(|i| self.objects[i].size_kind()),
+        };
+        let Some(size_kind) = size_kind else {
+            self.style_open = None;
+            return;
+        };
+        let (mut color, mut size) = selected.and_then(|i| self.objects[i].style()).unwrap_or(match size_kind {
+            SizeKind::Line => (self.style.color, self.style.line_width),
+            SizeKind::Font => (self.style.color, self.style.font_px),
+        });
+
+        let mut changed = false;
+        egui::Area::new(egui::Id::unique("style"))
+            .pivot(Align2::CENTER_BOTTOM)
+            .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    if let Some(section) = self.style_open {
+                        egui::Frame::popup(ui.style()).show(ui, |ui| {
+                            ui.horizontal(|ui| match section {
+                                StyleSection::Color => {
+                                    for (swatch, name) in PALETTE {
+                                        if color_swatch(ui, color == swatch, name, Some(swatch)) {
+                                            color = swatch;
+                                            changed = true;
+                                        }
+                                    }
+                                }
+                                StyleSection::Size => {
+                                    let options = match size_kind {
+                                        SizeKind::Line => LINE_WIDTHS,
+                                        SizeKind::Font => FONT_SIZES,
+                                    };
+                                    for option in options {
+                                        if size_button(ui, size == option, size_kind, option) {
+                                            size = option;
+                                            changed = true;
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    }
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
+                            let color_open = self.style_open == Some(StyleSection::Color);
+                            if color_swatch(ui, color_open, name, Some(color)) {
+                                self.style_open = (!color_open).then_some(StyleSection::Color);
+                            }
+                            let size_open = self.style_open == Some(StyleSection::Size);
+                            if size_button(ui, size_open, size_kind, size) {
+                                self.style_open = (!size_open).then_some(StyleSection::Size);
+                            }
+                        });
+                    });
+                });
+            });
+
+        if !changed {
+            return;
+        }
+        self.style_open = None;
+        self.style.color = color;
+        match size_kind {
+            SizeKind::Line => self.style.line_width = size,
+            SizeKind::Font => self.style.font_px = size,
+        }
+        if let Some(i) = selected {
+            self.objects[i].set_style(color, size);
+        }
     }
 
     /// Shows the zoom level; clicking it resets to 100% around the canvas center.
@@ -572,9 +721,9 @@ impl DeerawApp {
                     background.ctx.set_cursor_icon(CursorIcon::Text);
                 }
                 if let (true, Some(p)) = (background.clicked(), pointer) {
-                    let font_px = TEXT_SIZE;
+                    let Style { font_px, color, .. } = self.style;
                     let rect = Rect::from_min_size(p - Vec2::new(0.0, font_px / 2.0), Vec2::splat(MIN_SIZE));
-                    let id = self.add(rect, Kind::Text { text: String::new(), font_px });
+                    let id = self.add(rect, Kind::Text { text: String::new(), font_px, color });
                     self.editing = Some(id);
                     self.focus_editor = true;
                     self.tool = Tool::Select;
@@ -587,10 +736,12 @@ impl DeerawApp {
         match self.drawing.take() {
             Some(Drawing::Stroke(points)) if points.len() >= 2 => {
                 let (rect, points) = normalize(&points);
-                self.add(rect, Kind::Stroke { points });
+                let Style { color, line_width: width, .. } = self.style;
+                self.add(rect, Kind::Stroke { points, color, width });
             }
             Some(Drawing::Arrow(start, end)) if start.distance(end) >= MIN_SIZE => {
-                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end });
+                let Style { color, line_width: width, .. } = self.style;
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width });
                 self.tool = Tool::Select;
             }
             _ => {}
@@ -611,7 +762,7 @@ impl DeerawApp {
         if self.editing == Some(obj.id) {
             return;
         }
-        if let Kind::Arrow { start, end } = &mut obj.kind {
+        if let Kind::Arrow { start, end, .. } = &mut obj.kind {
             // Arrows get a handle per endpoint instead of a resize box.
             for (i, point) in [start, end].into_iter().enumerate() {
                 let center = to_screen_pos(*point);
@@ -694,7 +845,7 @@ impl DeerawApp {
             self.editing = None;
             return;
         };
-        let Kind::Text { text, font_px } = &mut obj.kind else {
+        let Kind::Text { text, font_px, color } = &mut obj.kind else {
             self.editing = None;
             return;
         };
@@ -705,7 +856,7 @@ impl DeerawApp {
             .show(ui.ctx(), |ui| {
                 egui::TextEdit::multiline(text)
                     .font(font)
-                    .text_color(INK)
+                    .text_color(*color)
                     .frame(egui::Frame::NONE)
                     .margin(egui::Margin::ZERO)
                     .desired_width(1.0)
@@ -728,7 +879,8 @@ impl DeerawApp {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, canvas_rect: Rect) {
+    /// Returns the toolbar's screen rect.
+    fn toolbar(&mut self, ui: &mut egui::Ui, canvas_rect: Rect) -> Rect {
         egui::Area::new(egui::Id::unique("toolbar"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(canvas_rect.center_bottom() - Vec2::new(0.0, 16.0))
@@ -748,7 +900,9 @@ impl DeerawApp {
                         }
                     });
                 });
-            });
+            })
+            .response
+            .rect
     }
 
     /// Adds an object on top and selects it.
@@ -812,6 +966,45 @@ fn paint_checkerboard(painter: &Painter, rect: Rect, cell: f32, gray: u8) {
     }
 }
 
+/// A selectable color button; `None` shows a checkerboard (transparent). Returns whether it was clicked.
+fn color_swatch(ui: &mut egui::Ui, selected: bool, name: &str, color: Option<Color32>) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
+    let response = ui.add(button).on_hover_text(name);
+    let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    match color {
+        Some(color) => _ = ui.painter().rect_filled(swatch, 2.0, color),
+        None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch, 3.5, 150),
+    }
+    ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
+    response.clicked()
+}
+
+/// A selectable size button: a line sample for line widths, S/M/L/XL for font sizes.
+/// Returns whether it was clicked.
+fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32) -> bool {
+    let hover = format!("{size:.0}px");
+    let response = match kind {
+        SizeKind::Line => {
+            let button = egui::Button::selectable(selected, "").min_size(Vec2::new(30.0, 22.0));
+            let response = ui.add(button);
+            let r = response.rect.shrink2(Vec2::new(7.0, 0.0));
+            let stroke = Stroke::new(size.min(r.height() - 6.0), ui.visuals().text_color());
+            ui.painter().line_segment([r.left_center(), r.right_center()], stroke);
+            response
+        }
+        SizeKind::Font => {
+            // Resized text can have any size; show it in pixels then.
+            let label = match FONT_SIZES.iter().position(|&s| s == size) {
+                Some(i) => ["S", "M", "L", "XL"][i].to_owned(),
+                None => hover.clone(),
+            };
+            let button = egui::Button::selectable(selected, label).min_size(Vec2::new(30.0, 22.0));
+            ui.add(button)
+        }
+    };
+    response.on_hover_text(hover).clicked()
+}
+
 /// A crosshair cursor: black lines with a white outline, so it shows on any background.
 /// (The stock Windows crosshair can be invisible over the canvas.)
 fn crosshair_cursor() -> egui::CustomCursorImage {
@@ -840,37 +1033,37 @@ fn crosshair_cursor() -> egui::CustomCursorImage {
 }
 
 fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
-    let stroke = Stroke::new(LINE_WIDTH * scale, INK);
     match &obj.kind {
         Kind::Image { texture } => {
             let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
             painter.image(texture.id(), rect, uv, Color32::WHITE);
         }
-        Kind::Stroke { points } => {
+        Kind::Stroke { points, color, width } => {
             let points = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
-            painter.line(points, stroke);
+            painter.line(points, Stroke::new(width * scale, *color));
         }
-        Kind::Arrow { start, end } => {
-            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), scale);
+        Kind::Arrow { start, end, color, width } => {
+            let stroke = Stroke::new(width * scale, *color);
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale);
         }
-        Kind::Text { text, font_px } => {
-            let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), INK);
-            painter.galley(rect.min, galley, INK);
+        Kind::Text { text, font_px, color } => {
+            let galley = painter.layout_no_wrap(text.clone(), FontId::proportional(font_px * scale), *color);
+            painter.galley(rect.min, galley, *color);
         }
     }
 }
 
-/// Draws a line from `start` to `end` (screen points) with a head at `end`.
-/// `scale` is screen points per canvas pixel.
-fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, scale: f32) {
-    let stroke = Stroke::new(LINE_WIDTH * scale, INK);
+/// Draws a line from `start` to `end` (screen points) with a head at `end`; the head grows
+/// with the stroke width. `scale` is screen points per canvas pixel.
+fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32) {
     painter.line_segment([start, end], stroke);
     let along = end - start;
     let length = along.length();
     if length < 1.0 {
         return;
     }
-    let back = -along / length * (ARROW_HEAD * scale).min(length / 2.0);
+    let head = ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width;
+    let back = -along / length * head.min(length / 2.0);
     let spread = Rot2::from_angle(0.45);
     painter.line_segment([end, end + spread * back], stroke);
     painter.line_segment([end, end + spread.inverse() * back], stroke);
@@ -997,7 +1190,7 @@ mod tests {
 
     fn arrow(id: u64) -> Object {
         let (start, end) = (Pos2::ZERO, Pos2::new(10.0, 0.0));
-        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end } }
+        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0 } }
     }
 
     #[test]
