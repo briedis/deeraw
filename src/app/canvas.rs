@@ -216,7 +216,8 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end, bindings)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
-                let heads = if self.tool == Tool::Arrow { self.style.arrow_heads } else { ArrowHeads::NONE };
+                // Only the Line tool draws lines; connecting objects with Select draws arrows.
+                let heads = if self.tool == Tool::Line { ArrowHeads::NONE } else { self.style.arrow_heads };
                 paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads);
                 self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), bindings, to_screen_pos);
             }
@@ -230,6 +231,9 @@ impl DeerawApp {
         if self.cropping.is_some() {
             self.crop_ui(ui, to_screen, to_canvas, scale);
         } else if selecting {
+            if self.editing.is_none() {
+                self.connect_ui(ui, to_canvas, to_screen_pos);
+            }
             self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
         }
         self.text_editor(ui, to_screen_pos, scale);
@@ -363,6 +367,11 @@ impl DeerawApp {
                 if background.clicked() && !ctrl {
                     self.selected.clear();
                 }
+                // Double-clicking empty space starts typing there, as a click does with Text.
+                if let (true, Some(p)) = (background.double_clicked(), pointer) {
+                    self.tool = Tool::Text;
+                    self.start_text(p - Vec2::new(0.0, self.style.font_px / 2.0), None);
+                }
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     self.marquee = Some((p, p));
                 }
@@ -476,7 +485,7 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end, bindings)) if start.distance(end) >= MIN_SIZE => {
                 let Style { color, line_width: width, arrow_heads, .. } = self.style;
-                let heads = (self.tool == Tool::Arrow).then_some(arrow_heads);
+                let heads = (self.tool != Tool::Line).then_some(arrow_heads);
                 self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings });
             }
             Some(Drawing::TextBox(a, b)) => {

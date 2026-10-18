@@ -1,8 +1,8 @@
 //! Attaching arrow endpoints to the sides of text and image objects.
 
-use eframe::egui::{Color32, Painter, Pos2, Rect, Stroke};
+use eframe::egui::{self, Color32, CursorIcon, Painter, PointerButton, Pos2, Rect, Sense, Stroke, Vec2};
 
-use super::{DeerawApp, SELECTION_COLOR};
+use super::{DeerawApp, Drawing, SELECTION_COLOR};
 use crate::object::{Binding, Kind, Side, anchor};
 
 /// An object's snap circles show while the pointer is this close to its border, in points.
@@ -51,6 +51,49 @@ impl DeerawApp {
                 } else {
                     painter.circle_filled(center, CIRCLE_RADIUS, Color32::WHITE);
                     painter.circle_stroke(center, CIRCLE_RADIUS, Stroke::new(1.5, SELECTION_COLOR));
+                }
+            }
+        }
+    }
+
+    /// With Select: the snap circles of objects near the pointer, and dragging from one draws an
+    /// arrow attached there (to another object's circle, or anywhere), without picking the Arrow
+    /// tool. The new arrow is selected. Registered after the objects, so a press on a circle
+    /// doesn't move its object.
+    pub(super) fn connect_ui(&mut self, ui: &egui::Ui, to_canvas: impl Fn(Pos2) -> Pos2, to_screen_pos: impl Fn(Pos2) -> Pos2) {
+        let pointer = ui.input(|i| i.pointer.hover_pos());
+        if self.drawing.is_none() && ui.ctx().dragged_id().is_none() {
+            self.paint_snap_circles(ui.painter(), pointer, &[], &to_screen_pos);
+        }
+        // Every circle, shown or not: the pointer is only ever over shown ones, and the one
+        // being dragged from must stay registered once the pointer leaves its object.
+        let circles: Vec<(Binding, Pos2, usize)> = self
+            .objects
+            .iter()
+            .filter(|o| o.bindable())
+            .flat_map(|o| Side::ALL.into_iter().enumerate().map(|(i, side)| (Binding { id: o.id, side }, anchor(o.rect, side), i)))
+            .collect();
+        for (binding, start, i) in circles {
+            let hit = Rect::from_center_size(to_screen_pos(start), Vec2::splat(2.0 * SNAP_DISTANCE));
+            let response = ui.interact(hit, egui::Id::unique(("connect", binding.id, i)), Sense::drag());
+            if response.hovered() || response.dragged() {
+                ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+            }
+            if response.drag_started_by(PointerButton::Primary) {
+                self.drawing = Some(Drawing::Arrow(start, start, [Some(binding), None]));
+            }
+            if let (true, Some(screen)) = (response.dragged_by(PointerButton::Primary), response.interact_pointer_pos()) {
+                let snap = self.snap(screen, &to_screen_pos);
+                if let Some(Drawing::Arrow(_, end, bindings)) = &mut self.drawing {
+                    *end = snap.map_or(to_canvas(screen), |(_, anchor)| anchor);
+                    bindings[1] = snap.map(|(b, _)| b);
+                }
+            }
+            if response.drag_stopped() {
+                let count = self.objects.len();
+                self.finish_drawing();
+                if self.objects.len() > count {
+                    self.selected = self.objects.last().map(|o| o.id).into_iter().collect();
                 }
             }
         }
@@ -152,6 +195,17 @@ mod tests {
         let (text_copy, arrow_copy) = (&app.objects[3], &app.objects[4]);
         let Kind::Arrow { bindings: [_, Some(binding)], .. } = arrow_copy.kind else { panic!("copy detached") };
         assert_eq!(binding.id, text_copy.id);
+    }
+
+    #[test]
+    fn connecting_with_select_draws_an_arrow() {
+        let mut app = app_with_arrow_on_text();
+        let start = anchor(app.objects[0].rect, Side::Right);
+        let binding = Binding { id: app.objects[0].id, side: Side::Right };
+        app.drawing = Some(Drawing::Arrow(start, start + Vec2::new(100.0, 0.0), [Some(binding), None]));
+        app.finish_drawing();
+        let new = app.objects.last().unwrap();
+        assert!(matches!(new.kind, Kind::Arrow { heads: Some(_), bindings: [Some(_), None], .. }));
     }
 
     #[test]

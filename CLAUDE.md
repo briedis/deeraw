@@ -83,6 +83,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      detaches it; moving an arrow without its object detaches it (`detach_selected`); Ctrl+D copies
      re-attach to copied objects or detach. Deleting the object leaves the arrow (its binding dangles
      harmlessly; ids are never reused, and undo re-attaches it).
+     **Connecting with Select:** the same circles show around text and images near the pointer; dragging
+     from one (crosshair cursor) draws an arrow attached there without picking the Arrow tool, with the
+     current arrow style, and selects it (`connect_ui` in `snap.rs`, registered after the objects so the
+     press doesn't move them, before the selection handles so those still win).
    - Line: like Arrow but without a head (same object kind, `heads: None`); stays in Line mode.
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
@@ -90,7 +94,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      style panel) over a background (transparent by default, or a palette color, also in the style
      panel); the box grows taller if the text overflows. All 8 handles resize the box freely
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
-     Double-click a text object to edit it. The Text tool stays active while typing (the style panel restyles that text too); finishing (Escape or clicking elsewhere) switches back to Select (`end_editing`). A press on the canvas ends typing before the tool sees it, so clicking away doesn't start another text.
+     Double-click a text object to edit it; with Select, double-clicking empty space starts a text there (switching to Text). The Text tool stays active while typing (the style panel restyles that text too); finishing (Escape or clicking elsewhere) switches back to Select (`end_editing`). A press on the canvas ends typing before the tool sees it, so clicking away doesn't start another text.
    - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only
      while exactly one image is selected) or by double-clicking an image. The whole source image shows dimmed and
      outlined, the kept part bright with 8 handles that drag its edges/corners freely within the
