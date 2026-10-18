@@ -90,7 +90,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      style panel) over a background (transparent by default, or a palette color, also in the style
      panel); the box grows taller if the text overflows. All 8 handles resize the box freely
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
-     Double-click a text object to edit it. Switches back to Select afterwards.
+     Double-click a text object to edit it. The Text tool stays active while typing (the style panel restyles that text too); finishing (Escape or clicking elsewhere) switches back to Select (`end_editing`). A press on the canvas ends typing before the tool sees it, so clicking away doesn't start another text.
    - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only
      while exactly one image is selected) or by double-clicking an image. The whole source image shows dimmed and
      outlined, the kept part bright with 8 handles that drag its edges/corners freely within the

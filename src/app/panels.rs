@@ -160,7 +160,8 @@ impl DeerawApp {
     pub(super) fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
         let targets: Vec<usize> = match self.tool {
             Tool::Select => (0..self.objects.len()).filter(|&i| self.selected.contains(&self.objects[i].id)).collect(),
-            _ => vec![],
+            // While typing with the Text tool, its style applies to that text too.
+            _ => (0..self.objects.len()).filter(|&i| self.editing == Some(self.objects[i].id)).collect(),
         };
         let (show_color, size_kinds) = match self.tool {
             Tool::Pencil | Tool::Arrow | Tool::Line => (true, vec![SizeKind::Line]),

@@ -343,6 +343,11 @@ impl DeerawApp {
         to_canvas: impl Fn(Pos2) -> Pos2,
         to_screen_pos: impl Fn(Pos2) -> Pos2,
     ) {
+        // Clicking away from the text being typed ends it (and the Text tool) instead of starting
+        // another text there. This runs before the editor sees it lose focus.
+        if self.editing.is_some() && background.is_pointer_button_down_on() {
+            self.end_editing();
+        }
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         // The cursor image is sticky between frames, so it must be cleared explicitly.
         let cursor = match self.tool {
@@ -459,7 +464,6 @@ impl DeerawApp {
         let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, frame });
         self.editing = Some(id);
         self.focus_editor = true;
-        self.tool = Tool::Select;
     }
 
     pub(super) fn finish_drawing(&mut self) {
@@ -545,14 +549,24 @@ impl DeerawApp {
         if std::mem::take(&mut self.focus_editor) {
             output.response.request_focus();
         }
-        // Escape or clicking elsewhere ends editing; empty text is discarded.
+        // Escape or clicking elsewhere (e.g. the toolbar) ends editing.
         if output.response.lost_focus() {
-            self.editing = None;
-            if text.trim().is_empty() {
-                self.objects.retain(|o| o.id != id);
-            } else {
-                self.selected = vec![id];
-            }
+            self.end_editing();
+        }
+    }
+
+    /// Ends text editing and switches to Select; empty text is discarded, otherwise it stays selected.
+    pub(super) fn end_editing(&mut self) {
+        let Some(id) = self.editing.take() else { return };
+        self.tool = Tool::Select;
+        let empty = self
+            .objects
+            .iter()
+            .any(|o| o.id == id && matches!(&o.kind, Kind::Text { text, .. } if text.trim().is_empty()));
+        if empty {
+            self.objects.retain(|o| o.id != id);
+        } else {
+            self.selected = vec![id];
         }
     }
 }
