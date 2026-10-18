@@ -200,9 +200,15 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
   must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
   product that competes with Deeraw. Source-available, not OSI open source.
-- The wgpu surface uses `SurfaceConfig::HIGH_THROUGHPUT` (vsync, 2 queued frames) instead of eframe's
-  `LOW_LATENCY` default (1 frame): every window move repaints, and with 1 frame each repaint blocks
-  on vsync, making window dragging choppy on Windows.
+- wgpu is set up in `wgpu_options` (`main.rs`). The surface uses `SurfaceConfig::HIGH_THROUGHPUT`
+  (vsync, 2 queued frames) instead of eframe's `LOW_LATENCY` default (1 frame): every window move
+  repaints, and with 1 frame each repaint blocks on vsync, making window dragging choppy on Windows.
+  `InstanceFlags::VALIDATION_INDIRECT_CALL` is cleared because it stopped the app from starting on
+  older GPUs: wgpu validates indirect draws with an internal compute pipeline built while the device
+  is created, Metal's shader compiler fails to build it on an Intel Iris Pro ("Compiler encountered
+  an internal error"), and `request_device` then fails with `Device(Lost)` before any window appears.
+  Nothing here draws indirectly. Symptoms of it coming back: the app exits at startup with
+  `Error: Wgpu(RequestDeviceError(... Device(Lost)))` and no window.
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip) on every push/PR; a `v*` tag publishes a release.
 - Git repo on `master`; commit after each working step.

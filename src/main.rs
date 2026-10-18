@@ -17,6 +17,33 @@ use app::DeerawApp;
 /// Window/taskbar icon and the About window's logo; rendered from `assets/deer.svg`.
 const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 
+/// wgpu's surface and device settings.
+///
+/// The surface uses `HIGH_THROUGHPUT` (vsync, 2 queued frames) instead of eframe's `LOW_LATENCY`
+/// default (1 frame): every window move repaints, and with 1 frame each repaint blocks on vsync,
+/// making window dragging choppy on Windows.
+///
+/// Indirect call validation is turned off because it keeps the app from starting at all on some
+/// older GPUs: wgpu validates indirect draws with an internal compute pipeline built while the
+/// device is created, and Metal's shader compiler fails to build it on an Intel Iris Pro
+/// ("Compiler encountered an internal error"). `request_device` then fails with `Device(Lost)`
+/// and `run_native` returns before a window appears. Nothing here draws indirectly, so the
+/// validation only costs us that startup — egui submits ordinary indexed draws.
+#[cfg(not(target_arch = "wasm32"))]
+fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    use eframe::egui_wgpu::{self, wgpu};
+
+    let mut options = egui_wgpu::WgpuConfiguration::default()
+        .with_surface_config(egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT);
+    if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
+        setup
+            .instance_descriptor
+            .flags
+            .remove(wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL);
+    }
+    options
+}
+
 /// Shared setup for the native and web builds.
 fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
     // Ctrl +/- zooms the canvas, not the whole UI.
@@ -33,10 +60,7 @@ fn main() -> eframe::Result {
             .with_icon(
                 eframe::icon_data::from_png_bytes(ICON_PNG).expect("bundled icon is a valid PNG"),
             ),
-        // eframe's default (vsync, 1 queued frame) makes dragging the window choppy on Windows:
-        // every move repaints and blocks on vsync. Two queued frames keep it smooth.
-        wgpu_options: eframe::egui_wgpu::WgpuConfiguration::default()
-            .with_surface_config(eframe::egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT),
+        wgpu_options: wgpu_options(),
         ..Default::default()
     };
     eframe::run_native("Deeraw", options, Box::new(|cc| Ok(create_app(cc))))
