@@ -17,15 +17,27 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: Option<egui::Keyboard
 
 /// A selectable color button; `None` shows a checkerboard (transparent). Returns whether it was clicked.
 pub fn color_swatch(ui: &mut egui::Ui, selected: bool, name: &str, color: Option<Color32>) -> bool {
-    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
+    color_swatch_sized(ui, selected, name, color, Vec2::splat(22.0), 14.0).clicked()
+}
+
+/// A color swatch of `swatch` points on a selectable button of at least `button`.
+pub fn color_swatch_sized(
+    ui: &mut egui::Ui,
+    selected: bool,
+    name: &str,
+    color: Option<Color32>,
+    button: Vec2,
+    swatch: f32,
+) -> egui::Response {
+    let button = egui::Button::selectable(selected, "").min_size(button);
     let response = ui.add(button).on_hover_text(name);
-    let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(swatch));
     match color {
         Some(color) => _ = ui.painter().rect_filled(swatch, 2.0, color),
         None => paint_checkerboard(&ui.painter().with_clip_rect(swatch), swatch, 3.5, 150),
     }
     ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
-    response.clicked()
+    response
 }
 
 /// A selectable size button: a line sample for line widths, S/M/L/XL for font sizes.

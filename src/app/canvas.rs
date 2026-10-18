@@ -237,9 +237,8 @@ impl DeerawApp {
         if self.space_pan {
             ui.interact(canvas_rect, egui::Id::unique("space-pan"), Sense::drag());
         }
-        let toolbar = self.toolbar(ui, canvas_rect);
+        let toolbar = self.toolbar(ui, canvas_rect, ppp);
         self.style_panel(ui, toolbar);
-        self.corner_controls(ui, canvas_rect, ppp);
         self.update_title(ui.ctx());
         self.notice(ui, canvas_rect);
         // Set last so it wins over the tool's cursor and hover cursors of whatever is under the pointer.

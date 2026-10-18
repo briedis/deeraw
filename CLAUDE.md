@@ -60,7 +60,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected. The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar, style panel and the bottom-right background picker and zoom level follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected; after a vertical separator, the canvas background (a single swatch that opens the others above it, an egui `Popup`) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar (and its background popup) and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
@@ -102,11 +102,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    typing; open-hand cursor while held, closed hand while panning). A blocking widget over the canvas keeps that drag from objects
    and tools. Mouse wheel zooms around the cursor; Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
-   Current zoom shows in a small box at the bottom-right of the canvas; clicking it resets to 100%.
+   Current zoom shows as a percentage at the right end of the toolbar; clicking it resets to 100%.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
    change to objects: paste, draw, text, move, resize, arrow points, delete. Not in history:
    selection, tool, pan/zoom.
-7. **Canvas background** — picker at the bottom-right (next to the zoom box): transparent
+7. **Canvas background** — swatch in the toolbar (next to the zoom level): transparent
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
    transparent, the PNG has real alpha (the offscreen render clears to transparent).
    Each background has a default ink: black on white/transparent, white on black. Switching the
@@ -140,8 +140,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `export.rs`
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
-  text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/panels.rs` (layers, toolbar, style panel, corner
-  controls), `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
+  text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/panels.rs` (layers, toolbar, style panel),
+  `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize

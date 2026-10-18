@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::Kind;
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, align_name, color_swatch, icon_button, pen_button, size_button};
+use crate::widgets::{Icon, align_button, align_name, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -114,25 +114,22 @@ impl DeerawApp {
         }
     }
 
-    /// Bottom-right of the canvas: background picker and zoom level.
-    pub(super) fn corner_controls(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
-        let area = egui::Area::new(egui::Id::unique("corner"))
-            .pivot(Align2::RIGHT_BOTTOM)
-            .fixed_pos(canvas_rect.right_bottom() - Vec2::splat(16.0))
-            .order(egui::Order::Foreground)
-            .show(ui.ctx(), |ui| {
-                ui.set_visuals(canvas_ui_visuals(self.background));
-                ui.horizontal(|ui| {
-                    egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| self.background_picker(ui));
-                    egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
-                        // As tall as the background swatches.
-                        ui.set_min_height(22.0);
-                        self.zoom_indicator(ui, canvas_rect, ppp);
-                    });
-                });
-            });
-        // The zoom level's width changes, e.g. from 90% to 100%.
-        redo_frame_if_resized(ui.ctx(), &area.response);
+    /// The current canvas background; clicking it opens the others above it.
+    fn background_button(&mut self, ui: &mut egui::Ui) {
+        let name = match self.background {
+            Background::Transparent => "Canvas background: transparent",
+            Background::White => "Canvas background: white",
+            Background::Black => "Canvas background: black",
+        };
+        let button = Vec2::splat(TOOLBAR_ICON_SIZE) + Vec2::new(12.0, 8.0);
+        let response = color_swatch_sized(ui, false, name, self.background.color(), button, 18.0);
+        let visuals = canvas_ui_visuals(self.background);
+        egui::Popup::from_toggle_button_response(&response)
+            .align(egui::RectAlign::TOP)
+            .gap(10.0)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+            .style(move |style: &mut egui::Style| style.visuals = visuals.clone())
+            .show(|ui| self.background_picker(ui));
     }
 
     pub(super) fn background_picker(&mut self, ui: &mut egui::Ui) {
@@ -378,8 +375,9 @@ impl DeerawApp {
     /// Shows the zoom level; clicking it resets to 100% around the canvas center.
     pub(super) fn zoom_indicator(&mut self, ui: &mut egui::Ui, canvas_rect: Rect, ppp: f32) {
         let label = format!("{:.0}%", self.zoom() * 100.0);
+        // A fixed width, so the toolbar doesn't change size with the zoom level.
         let clicked = ui
-            .add(egui::Label::new(label).sense(Sense::click()))
+            .add_sized([44.0, TOOLBAR_ICON_SIZE], egui::Label::new(label).sense(Sense::click()))
             .on_hover_cursor(CursorIcon::PointingHand)
             .on_hover_text("Reset to 100%")
             .clicked();
@@ -391,8 +389,8 @@ impl DeerawApp {
         }
     }
 
-    /// Returns the toolbar's screen rect.
-    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, canvas_rect: Rect) -> Rect {
+    /// The tools, then the canvas background and zoom level. Returns the toolbar's screen rect.
+    pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, canvas_rect: Rect, ppp: f32) -> Rect {
         let area = egui::Area::new(egui::Id::unique("toolbar"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(canvas_rect.center_bottom() - Vec2::new(0.0, 16.0))
@@ -419,6 +417,9 @@ impl DeerawApp {
                                 self.toggle_crop();
                             }
                         }
+                        ui.separator();
+                        self.background_button(ui);
+                        self.zoom_indicator(ui, canvas_rect, ppp);
                     });
                 });
             });
