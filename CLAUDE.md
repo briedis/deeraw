@@ -76,7 +76,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
      **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
-     border is within 40pt of the pointer show a circle 8px outside each side's center (`anchor`);
+     border is within 40pt of the pointer show a circle 16px outside each side's center (clear of the resize handles) (`anchor`);
      an end within 12pt of a circle snaps to it (filled circle) and attaches (`bindings: [start, end]`,
      a `Binding { id, side }` each). Attached ends follow their object every frame (`follow_bindings`,
      also run just before recording undo so both land in one step). Dragging an endpoint away

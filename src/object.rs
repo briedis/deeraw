@@ -143,7 +143,8 @@ pub struct Binding {
 }
 
 /// How far outside a side's center an attached arrow ends, in canvas pixels.
-const ANCHOR_GAP: f32 = 8.0;
+/// Far enough that its circle clears the edge resize handles at 100% zoom.
+const ANCHOR_GAP: f32 = 16.0;
 
 /// Where an arrow attached to `side` of `rect` ends: just outside the side's center.
 pub fn anchor(rect: Rect, side: Side) -> Pos2 {
