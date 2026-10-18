@@ -6,12 +6,14 @@ use super::{DeerawApp, Tool};
 use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::Kind;
-use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection};
+use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
 use crate::widgets::{Icon, align_button, align_name, color_swatch, icon_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
 const NOTICE_FADE: f64 = 0.5;
+/// Toolbar icons, in points.
+const TOOLBAR_ICON_SIZE: f32 = 24.0;
 
 impl DeerawApp {
     pub(super) fn layers_panel(&mut self, ui: &mut egui::Ui) {
@@ -114,16 +116,23 @@ impl DeerawApp {
 
     /// Bottom-right of the canvas: background picker and zoom level.
     pub(super) fn corner_controls(&mut self, ui: &egui::Ui, canvas_rect: Rect, ppp: f32) {
-        egui::Area::new(egui::Id::unique("corner"))
+        let area = egui::Area::new(egui::Id::unique("corner"))
             .pivot(Align2::RIGHT_BOTTOM)
             .fixed_pos(canvas_rect.right_bottom() - Vec2::splat(16.0))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
+                ui.set_visuals(canvas_ui_visuals(self.background));
                 ui.horizontal(|ui| {
-                    egui::Frame::popup(ui.style()).show(ui, |ui| self.background_picker(ui));
-                    egui::Frame::popup(ui.style()).show(ui, |ui| self.zoom_indicator(ui, canvas_rect, ppp));
+                    egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| self.background_picker(ui));
+                    egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
+                        // As tall as the background swatches.
+                        ui.set_min_height(22.0);
+                        self.zoom_indicator(ui, canvas_rect, ppp);
+                    });
                 });
             });
+        // The zoom level's width changes, e.g. from 90% to 100%.
+        redo_frame_if_resized(ui.ctx(), &area.response);
     }
 
     pub(super) fn background_picker(&mut self, ui: &mut egui::Ui) {
@@ -217,11 +226,12 @@ impl DeerawApp {
         let mut new_align = None;
         let mut new_fill = None;
         let mut new_pen = None;
-        egui::Area::new(egui::Id::unique("style"))
+        let area = egui::Area::new(egui::Id::unique("style"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
+                ui.set_visuals(canvas_ui_visuals(self.background));
                 ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                     if let Some(section) = self.style_open {
                         egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -307,6 +317,7 @@ impl DeerawApp {
                     });
                 });
             });
+        redo_frame_if_resized(ui.ctx(), &area.response);
 
         if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() {
             return;
@@ -382,12 +393,13 @@ impl DeerawApp {
 
     /// Returns the toolbar's screen rect.
     pub(super) fn toolbar(&mut self, ui: &mut egui::Ui, canvas_rect: Rect) -> Rect {
-        egui::Area::new(egui::Id::unique("toolbar"))
+        let area = egui::Area::new(egui::Id::unique("toolbar"))
             .pivot(Align2::CENTER_BOTTOM)
             .fixed_pos(canvas_rect.center_bottom() - Vec2::new(0.0, 16.0))
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
-                egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_visuals(canvas_ui_visuals(self.background));
+                egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
                     ui.horizontal(|ui| {
                         for (tool, icon, hint) in [
                             (Tool::Select, Icon::Select, "Select (V)"),
@@ -396,21 +408,37 @@ impl DeerawApp {
                             (Tool::Line, Icon::Line, "Line (L)"),
                             (Tool::Text, Icon::Text, "Text (T)"),
                         ] {
-                            if icon_button(ui, self.tool == tool, icon, 20.0, hint) {
+                            if icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint) {
                                 self.tool = tool;
                             }
                         }
                         // Only offered while an image is selected (or being cropped).
                         if self.cropping.is_some() || self.selected_image().is_some() {
                             ui.separator();
-                            if icon_button(ui, self.cropping.is_some(), Icon::Crop, 20.0, "Crop image (C, or double-click it)") {
+                            if icon_button(ui, self.cropping.is_some(), Icon::Crop, TOOLBAR_ICON_SIZE, "Crop image (C, or double-click it)") {
                                 self.toggle_crop();
                             }
                         }
                     });
                 });
-            })
-            .response
-            .rect
+            });
+        redo_frame_if_resized(ui.ctx(), &area.response);
+        area.response.rect
+    }
+}
+
+/// An area placed by a pivot other than its top left corner is positioned using last frame's
+/// size, so for one frame after its content changes size (e.g. opening another style section)
+/// it's drawn in the wrong place. This redoes that frame, now with the new size.
+fn redo_frame_if_resized(ctx: &egui::Context, response: &egui::Response) {
+    let id = response.id.with("last-size");
+    let size = response.rect.size();
+    let last = ctx.data_mut(|d| {
+        let last = d.get_temp::<Vec2>(id);
+        d.insert_temp(id, size);
+        last
+    });
+    if last.is_some_and(|last| last != size) {
+        ctx.request_discard("canvas panel resized");
     }
 }

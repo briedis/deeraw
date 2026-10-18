@@ -60,7 +60,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected. The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed.
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected. The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar, style panel and the bottom-right background picker and zoom level follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
@@ -173,6 +173,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   of a frame.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
+- An `Area` with a pivot other than LEFT_TOP is placed using last frame's size, so it's misplaced for a frame when its content resizes; `redo_frame_if_resized` (panels.rs) discards that frame (`ctx.request_discard`).
 - Clipboard needs no extra crates: egui-winit emits `Event::PasteImage` (when the clipboard has
   no text) and `ctx.copy_image()` writes PNG via arboard.
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check

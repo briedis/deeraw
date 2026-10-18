@@ -150,7 +150,7 @@ pub fn icon_button(ui: &mut egui::Ui, selected: bool, icon: Icon, size: f32, hin
     let response = ui.add(button).on_hover_text(hint);
     let origin = response.rect.center() - Vec2::splat(size / 2.0);
     let scale = size / 32.0;
-    let color = ui.visuals().text_color();
+    let color = if selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
     for &(points, closed, width) in icon.strokes() {
         let points = points.iter().map(|&[x, y]| origin + Vec2::new(x, y) * scale).collect();
         let stroke = Stroke::new(width * scale, color);

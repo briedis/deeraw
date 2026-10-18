@@ -1,6 +1,6 @@
 //! Style settings for new objects (style panel) and the canvas background.
 
-use eframe::egui::{Align2, Color32};
+use eframe::egui::{Align2, Color32, CornerRadius, Stroke, Visuals};
 
 /// Colors offered by the style panel; the first is the default.
 pub const PALETTE: [(Color32, &str); 6] = [
@@ -87,4 +87,43 @@ impl Background {
             Background::Black => Color32::WHITE,
         }
     }
+}
+
+/// Selected toolbar and style panel buttons.
+const ACCENT: Color32 = Color32::from_rgb(37, 99, 235);
+
+/// The look of the toolbar and style panel, which float on the canvas: light on a white or
+/// transparent canvas, dark on a black one.
+pub fn canvas_ui_visuals(background: Background) -> Visuals {
+    let (mut visuals, fill, border, hover, text) = match background {
+        Background::Transparent | Background::White => (
+            Visuals::light(),
+            Color32::WHITE,
+            Color32::from_rgb(226, 232, 240),
+            Color32::from_rgb(241, 245, 249),
+            Color32::from_rgb(30, 41, 59),
+        ),
+        Background::Black => (
+            Visuals::dark(),
+            Color32::from_rgb(39, 42, 48),
+            Color32::from_rgb(63, 68, 77),
+            Color32::from_rgb(58, 63, 72),
+            Color32::from_rgb(226, 232, 240),
+        ),
+    };
+    visuals.window_fill = fill;
+    visuals.window_stroke = Stroke::new(1.0, border);
+    visuals.menu_corner_radius = CornerRadius::same(12);
+    visuals.selection.bg_fill = ACCENT;
+    visuals.selection.stroke = Stroke::new(1.0, Color32::WHITE);
+    let widgets = &mut visuals.widgets;
+    for w in [&mut widgets.noninteractive, &mut widgets.inactive, &mut widgets.hovered, &mut widgets.active, &mut widgets.open] {
+        w.fg_stroke.color = text;
+        w.corner_radius = CornerRadius::same(8);
+    }
+    widgets.hovered.weak_bg_fill = hover;
+    widgets.hovered.bg_stroke = Stroke::NONE;
+    widgets.active.weak_bg_fill = hover;
+    widgets.active.bg_stroke = Stroke::NONE;
+    visuals
 }
