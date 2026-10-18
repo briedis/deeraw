@@ -136,6 +136,12 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
    - Help: About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
      (`authors`), read with `env!`. Escape or × closes it. It also links the license.
+10. **Remembered settings** — the style (color, sizes, pen, arrow heads, alignment, fill), the canvas
+    background and the last file folder survive a relaunch, via eframe's `persistence` feature
+    (`Settings` and `App::save` in `app/mod.rs`; `app.ron` in `%APPDATA%\deeraw\data`, localStorage on
+    the web), as do the window size and position. Saved on exit and every 30 seconds. `#[serde(default)]`
+    keeps older settings files loading as fields are added; unreadable ones are ignored. The drawing
+    isn't kept, and the app always starts with Select.
 
 ## Current state
 

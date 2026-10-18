@@ -33,7 +33,7 @@ pub enum Kind {
 }
 
 /// What an arrow has at its start and at its end.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ArrowHeads {
     pub start: Head,
     pub end: Head,
@@ -51,7 +51,7 @@ impl Default for ArrowHeads {
 }
 
 /// One end of an arrow.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Head {
     /// The line just ends.
     None,

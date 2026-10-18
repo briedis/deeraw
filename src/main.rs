@@ -21,7 +21,7 @@ const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
     // Ctrl +/- zooms the canvas, not the whole UI.
     cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
-    Box::new(DeerawApp::default())
+    Box::new(DeerawApp::new(cc.storage))
 }
 
 #[cfg(not(target_arch = "wasm32"))]

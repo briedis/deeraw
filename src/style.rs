@@ -43,7 +43,10 @@ pub enum SizeKind {
     Font,
 }
 
-/// Color and sizes for new objects, set from the style panel.
+/// Color and sizes for new objects, set from the style panel. Remembered between launches;
+/// fields missing from older settings get their defaults.
+#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct Style {
     pub color: Color32,
     pub line_width: f32,
@@ -72,7 +75,7 @@ impl Style {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Background {
     Transparent,
     #[default]

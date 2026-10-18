@@ -26,8 +26,22 @@ const MIN_ZOOM_LEVEL: i32 = -4;
 const MAX_ZOOM_LEVEL: i32 = 20;
 /// How far Ctrl+D copies are moved from the original, in canvas pixels.
 const DUPLICATE_OFFSET: f32 = 20.0;
+/// Key of `Settings` in eframe's storage.
+const SETTINGS_KEY: &str = "settings";
 
-#[derive(Clone, Copy, PartialEq, Default)]
+/// What's remembered between launches, in eframe's storage (`app.ron` in the app's data
+/// folder, e.g. `%APPDATA%\deeraw\data`; localStorage on the web). Saved on exit and every
+/// 30 seconds. Unreadable settings are ignored, missing fields get their defaults. The drawing
+/// isn't kept, and the app always starts with Select.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct Settings {
+    style: Style,
+    background: Background,
+    save_dir: Option<PathBuf>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 enum Tool {
     #[default]
     Select,
@@ -128,7 +142,20 @@ pub struct DeerawApp {
     style_anchor: egui::Pos2,
 }
 
+impl DeerawApp {
+    pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
+        let Settings { style, background, save_dir } =
+            storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
+        Self { style, background, save_dir, ..Default::default() }
+    }
+}
+
 impl eframe::App for DeerawApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let settings = Settings { style: self.style, background: self.background, save_dir: self.save_dir.clone() };
+        eframe::set_value(storage, SETTINGS_KEY, &settings);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
             self.show_layers = !self.show_layers;
@@ -219,6 +246,8 @@ impl DeerawApp {
 
 #[cfg(test)]
 mod tests {
+    use eframe::Storage as _;
+
     use super::*;
 
     #[test]
@@ -232,5 +261,48 @@ mod tests {
         assert_eq!(app.selected, [1, 3]);
         app.click_select(3, false);
         assert_eq!(app.selected, [3]);
+    }
+
+    /// In-memory stand-in for eframe's file storage.
+    #[derive(Default)]
+    struct Memory(std::collections::HashMap<String, String>);
+
+    impl eframe::Storage for Memory {
+        fn get_string(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+        fn set_string(&mut self, key: &str, value: String) {
+            self.0.insert(key.to_owned(), value);
+        }
+        fn remove_string(&mut self, key: &str) {
+            self.0.remove(key);
+        }
+        fn flush(&mut self) {}
+    }
+
+    #[test]
+    fn settings_survive_a_relaunch() {
+        let mut app = DeerawApp::default();
+        app.style.color = Color32::RED;
+        app.style.line_width = 10.0;
+        app.background = Background::Black;
+        app.tool = Tool::Pencil;
+        let mut storage = Memory::default();
+        eframe::App::save(&mut app, &mut storage);
+
+        let app = DeerawApp::new(Some(&storage));
+        assert_eq!((app.style.color, app.style.line_width, app.background), (Color32::RED, 10.0, Background::Black));
+        assert_eq!(app.tool, Tool::Select);
+    }
+
+    #[test]
+    fn missing_or_unreadable_settings_fall_back_to_defaults() {
+        let mut storage = Memory::default();
+        storage.set_string(SETTINGS_KEY, "(background: Black)".into());
+        let app = DeerawApp::new(Some(&storage));
+        assert_eq!((app.background, app.style.line_width), (Background::Black, Style::default().line_width));
+
+        storage.set_string(SETTINGS_KEY, "not settings".into());
+        assert_eq!(DeerawApp::new(Some(&storage)).background, Background::default());
     }
 }
