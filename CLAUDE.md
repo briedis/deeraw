@@ -219,9 +219,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that
   must stay; `license` in Cargo.toml). Any use is allowed, commercial included, except providing a
   product that competes with Deeraw. Source-available, not OSI open source.
-- wgpu is set up in `wgpu_options` (`main.rs`). The surface uses `SurfaceConfig::HIGH_THROUGHPUT`
-  (vsync, 2 queued frames) instead of eframe's `LOW_LATENCY` default (1 frame): every window move
-  repaints, and with 1 frame each repaint blocks on vsync, making window dragging choppy on Windows.
+- wgpu is set up in `wgpu_options` (`main.rs`). The surface uses `SurfaceConfig::LOW_LATENCY` (1 queued frame);
+  `HIGH_THROUGHPUT` (2 frames) made window resizing jittery on Windows (the presented frame lagged the
+  window size and was stretched to fit), and window dragging is smooth with 1 frame too.
   `InstanceFlags::VALIDATION_INDIRECT_CALL` is cleared because it stopped the app from starting on
   older GPUs: wgpu validates indirect draws with an internal compute pipeline built while the device
   is created, Metal's shader compiler fails to build it on an Intel Iris Pro ("Compiler encountered

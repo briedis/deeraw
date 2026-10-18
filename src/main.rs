@@ -20,9 +20,9 @@ const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 
 /// wgpu's surface and device settings.
 ///
-/// The surface uses `HIGH_THROUGHPUT` (vsync, 2 queued frames) instead of eframe's `LOW_LATENCY`
-/// default (1 frame): every window move repaints, and with 1 frame each repaint blocks on vsync,
-/// making window dragging choppy on Windows.
+/// The surface uses eframe's `LOW_LATENCY` default (1 queued frame). `HIGH_THROUGHPUT` (2 frames)
+/// made window resizing jittery on Windows: the presented frame lagged the window size and was
+/// stretched to fit.
 ///
 /// Indirect call validation is turned off because it keeps the app from starting at all on some
 /// older GPUs: wgpu validates indirect draws with an internal compute pipeline built while the
@@ -35,7 +35,7 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     use eframe::egui_wgpu::{self, wgpu};
 
     let mut options = egui_wgpu::WgpuConfiguration::default()
-        .with_surface_config(egui_wgpu::SurfaceConfig::HIGH_THROUGHPUT);
+        .with_surface_config(egui_wgpu::SurfaceConfig::LOW_LATENCY);
     if let egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
         setup
             .instance_descriptor
