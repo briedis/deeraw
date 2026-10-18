@@ -28,7 +28,7 @@ pub fn export_shapes(
     let to_screen_pos = |p: Pos2| Pos2::ZERO + (p - region.min) * scale;
     for obj in objects {
         let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
-        paint_object(&painter, obj, rect, to_screen_pos, scale);
+        paint_object(&painter, obj, objects, rect, to_screen_pos, scale);
     }
     ctx.graphics_mut(|graphics| {
         let list = std::mem::take(graphics.entry(layer));

@@ -42,7 +42,7 @@ impl DeerawApp {
                     r.height()
                 );
                 match &obj.kind {
-                    Kind::Image { texture, uv } => {
+                    Kind::Image { texture, uv, .. } => {
                         let [w, h] = texture.size();
                         info += &format!("\nsource {w}×{h}");
                         if *uv != Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)) {
@@ -74,6 +74,7 @@ impl DeerawApp {
                             }
                         }
                     }
+                    Kind::Blur { image, .. } => info += &format!("\non image #{image}"),
                 }
                 ui.weak(info);
             }
@@ -171,6 +172,7 @@ impl DeerawApp {
         };
         let (show_color, size_kinds) = match self.tool {
             Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape => (true, vec![SizeKind::Line]),
+            Tool::Blur => (false, vec![]),
             Tool::Text => (true, vec![SizeKind::Font]),
             Tool::Select => {
                 let kinds: Vec<SizeKind> = targets.iter().filter_map(|&i| self.objects[i].size_mut().map(|(k, _)| k)).collect();
@@ -503,6 +505,7 @@ impl DeerawApp {
                             (Tool::Arrow, Icon::Arrow, "Arrow (A)"),
                             (Tool::Line, Icon::Line, "Line (L)"),
                             (Tool::Shape, shape_icon(self.style.shape), "Shape (S)"),
+                            (Tool::Blur, Icon::Blur, "Blur (B): drag on an image to pixelate that part"),
                             (Tool::Text, Icon::Text, "Text (T)"),
                         ] {
                             let button = ui.scope(|ui| icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint));
@@ -547,6 +550,7 @@ fn drawing_tool(kind: &Kind) -> Option<Tool> {
         Kind::Arrow { heads: Some(_), .. } => Some(Tool::Arrow),
         Kind::Arrow { .. } => Some(Tool::Line),
         Kind::Shape { .. } => Some(Tool::Shape),
+        Kind::Blur { .. } => Some(Tool::Blur),
         Kind::Text { .. } => Some(Tool::Text),
         Kind::Image { .. } => None,
     }

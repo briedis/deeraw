@@ -6,6 +6,7 @@ mod cursor;
 mod export;
 mod geometry;
 mod history;
+mod mosaic;
 mod object;
 mod paint;
 mod stroke;

@@ -60,8 +60,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Shape, Text, plus Crop while exactly one image is selected; after a vertical separator, the canvas background (a single swatch that opens the others, like a style panel section) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
-   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, S Shape, T Text, C Crop;
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Shape, Blur (a droplet), Text, plus Crop while exactly one image is selected; after a vertical separator, the canvas background (a single swatch that opens the others, like a style panel section) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
+   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, S Shape, B Blur, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke (it starts on press, so a click leaves a dot); stays in Pencil mode. Two pen styles (style panel):
@@ -93,6 +93,18 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      only by default (`fill: None`, shared with text boxes' fill); an unfilled shape is grabbed only
      near its outline (`distance_to_outline`) unless selected, so things inside it stay clickable.
      Resizes freely; arrows attach to shapes like to text and images. Stays in Shape mode.
+   - Blur (B): drag a box over part of an image to pixelate it, for hiding things in screenshots
+     (`Kind::Blur`, `app/blur.rs`). The drag may start outside: the box attaches to the first image it
+     touches (topmost if several) and is cut to that image's edges; one that never touches an image
+     shows a notice. Pixelated, not gaussian, so it's safe: on paste each image also gets a `mosaic`
+     texture (`mosaic.rs`: every 12×12 block averaged into one pixel, nearest sampling), and a blur paints
+     that over its area (`paint_mosaic`), so the original pixels are never drawn there, on screen or in
+     exports. Blocks are aligned to the image's pixels. A blur stores its `area` relative to the whole
+     uncropped image, and `follow_blurs` re-derives its `rect` every frame, so it moves, resizes and crops
+     with the image; moving/resizing the blur itself updates `area` (`update_blur_areas`). It's inserted
+     right above its image, so annotations stay on top. Deleting or cutting an image takes its blurs
+     along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely; no style options yet
+     (fixed block size). While cropping, the image shows unblurred (on screen only).
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
      lines break at the box width and the text is aligned inside it (9 alignments, picked in the
@@ -153,10 +165,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 - Code layout (`src/`): `main.rs` (native window / web canvas setup, `mod`s), `object.rs` (`Object`, `Kind`, `TextFrame`),
   `style.rs` (`Style`, palette/sizes, `Background`), `history.rs` (undo), `geometry.rs` (resize/crop/zoom math),
-  `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `export.rs`
+  `stroke.rs` (pencil points, pressure, hand-drawn painting), `paint.rs` (painting objects), `mosaic.rs` (pixelation), `export.rs`
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
-  text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/panels.rs` (layers, toolbar, style panel),
+  text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
   `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already

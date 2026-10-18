@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
 
-use crate::geometry::diamond;
+use crate::geometry::{crop_uv, diamond, uncropped_rect};
+use crate::mosaic::BLOCK;
 use crate::object::{ArrowHeads, Head, Kind, Object, Shape, TextFrame};
 use crate::stroke::paint_hand_drawn;
 
@@ -14,10 +15,16 @@ const ARROW_HEAD_PER_WIDTH: f32 = 2.0;
 /// Angle between an arrow's line and each side of its head, in radians.
 const ARROW_HEAD_SPREAD: f32 = 0.45;
 
-pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
+/// `objects` are all the objects being painted, where a blur finds its image.
+pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
     match &obj.kind {
-        Kind::Image { texture, uv } => {
+        Kind::Image { texture, uv, .. } => {
             painter.image(texture.id(), rect, *uv, Color32::WHITE);
+        }
+        Kind::Blur { image, .. } => {
+            if let Some(image) = objects.iter().find(|o| o.id == *image) {
+                paint_mosaic(painter, image, obj.rect, to_screen_pos);
+            }
         }
         Kind::Stroke { points, pressures, color, width, hand_drawn } => {
             let points: Vec<Pos2> = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
@@ -48,6 +55,23 @@ pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: 
             painter.galley(pos, galley, *color);
         }
     }
+}
+
+/// Paints the part `area` (canvas pixels) of `image` pixelated; only where it overlaps the
+/// image's kept area.
+pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2) {
+    let Kind::Image { texture, uv, mosaic } = &image.kind else { return };
+    let visible = area.intersect(image.rect);
+    if !visible.is_positive() {
+        return;
+    }
+    // The mosaic's blocks at the right and bottom edges may stick out of the image.
+    let ([w, h], [mw, mh]) = (texture.size(), mosaic.size());
+    let covered = Vec2::new(w as f32 / (mw * BLOCK) as f32, h as f32 / (mh * BLOCK) as f32);
+    let image_uv = crop_uv(uncropped_rect(image.rect, *uv), visible);
+    let mosaic_uv = Rect::from_min_max((image_uv.min.to_vec2() * covered).to_pos2(), (image_uv.max.to_vec2() * covered).to_pos2());
+    let screen = Rect::from_min_max(to_screen_pos(visible.min), to_screen_pos(visible.max));
+    painter.image(mosaic.id(), screen, mosaic_uv, Color32::WHITE);
 }
 
 /// Lays out a text object's text. `font_px` and `frame` are in the same unit (canvas pixels

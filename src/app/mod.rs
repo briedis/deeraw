@@ -1,5 +1,6 @@
 //! The app: its state, the frame layout, and operations on the objects.
 
+mod blur;
 mod canvas;
 mod files;
 mod menu;
@@ -49,6 +50,7 @@ enum Tool {
     Arrow,
     Line,
     Shape,
+    Blur,
     Text,
 }
 
@@ -80,6 +82,8 @@ enum Drawing {
     TextBox(Pos2, Pos2),
     /// Two opposite corners.
     Shape(Pos2, Pos2),
+    /// The image (the first one the box touched, once it has), and two opposite corners.
+    Blur(Option<u64>, Pos2, Pos2),
 }
 
 #[derive(Default)]
@@ -201,7 +205,9 @@ impl DeerawApp {
     }
 
     /// Copies the selected objects on top, offset a little, and selects the copies. Copied
-    /// arrows attach to the copies of their objects, or detach if those weren't copied.
+    /// arrows attach to the copies of their objects, or detach if those weren't copied. Copied
+    /// blurs go on the copy of their image, or stay on the image if it wasn't copied.
+    /// (Copies of blurs are on top, not right above their image.)
     fn duplicate_selected(&mut self) {
         let copies: Vec<Object> = self.objects.iter().filter(|o| self.selected.contains(&o.id)).cloned().collect();
         // Copy i gets id `first_id + i`.
@@ -212,17 +218,20 @@ impl DeerawApp {
             copy.id = self.next_id;
             self.next_id += 1;
             copy.translate(Vec2::splat(DUPLICATE_OFFSET));
-            if let Kind::Arrow { bindings, .. } = &mut copy.kind {
-                for binding in bindings {
-                    *binding = binding.and_then(|b| {
-                        let i = originals.iter().position(|id| *id == b.id)?;
-                        Some(Binding { id: first_id + i as u64, ..b })
-                    });
+            let copy_of = |id: u64| originals.iter().position(|o| *o == id).map(|i| first_id + i as u64);
+            match &mut copy.kind {
+                Kind::Arrow { bindings, .. } => {
+                    for binding in bindings {
+                        *binding = binding.and_then(|b| Some(Binding { id: copy_of(b.id)?, ..b }));
+                    }
                 }
+                Kind::Blur { image, .. } => *image = copy_of(*image).unwrap_or(*image),
+                _ => {}
             }
             self.selected.push(copy.id);
             self.objects.push(copy);
         }
+        self.update_blur_areas();
     }
 
     /// Adds an object on top and selects it.
@@ -235,9 +244,10 @@ impl DeerawApp {
         id
     }
 
+    /// Deleting an image deletes its blurs.
     fn delete_selected(&mut self) {
         let selected = std::mem::take(&mut self.selected);
-        self.objects.retain(|obj| !selected.contains(&obj.id));
+        self.objects.retain(|obj| !selected.contains(&obj.id) && !obj.blurred_image().is_some_and(|i| selected.contains(&i)));
     }
 
     fn select_all(&mut self) {

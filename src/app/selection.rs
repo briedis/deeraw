@@ -112,9 +112,9 @@ impl DeerawApp {
             if let (true, Some(p), Some(drag)) =
                 (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
             {
-                // Plain text keeps whatever aspect the layout gives it; text boxes and shapes resize freely.
+                // Plain text keeps whatever aspect the layout gives it; text boxes, shapes and blurs resize freely.
                 let aspect = match obj.kind {
-                    Kind::Text { frame: Some(_), .. } | Kind::Shape { .. } => None,
+                    Kind::Text { frame: Some(_), .. } | Kind::Shape { .. } | Kind::Blur { .. } => None,
                     Kind::Text { .. } => Some(drag.start.aspect_ratio()),
                     _ => Some(obj.aspect),
                 };
@@ -166,7 +166,7 @@ impl DeerawApp {
         let finish = ui.input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Escape));
         let still_cropping = !finish && self.tool == Tool::Select && self.selected == [id];
         let obj = self.objects.iter_mut().find(|o| o.id == id).filter(|_| still_cropping);
-        let Some(Object { rect: kept, aspect, kind: Kind::Image { texture, uv }, .. }) = obj else {
+        let Some(Object { rect: kept, aspect, kind: Kind::Image { texture, uv, .. }, .. }) = obj else {
             self.cropping = None;
             return;
         };

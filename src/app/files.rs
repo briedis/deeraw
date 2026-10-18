@@ -8,6 +8,7 @@ use eframe::egui::{self, ColorImage, Pos2, Rect, Vec2};
 
 use super::{DeerawApp, MIN_ZOOM_LEVEL, Notice, ZOOM_STEP};
 use crate::export::{Export, ExportStep, ExportTarget, bounds, encode_png, export_shapes, format_bytes, render_offscreen, trim, write_png};
+use crate::mosaic::mosaic;
 use crate::object::Kind;
 
 /// Room rendered around the objects' rects when exporting, in canvas pixels, so line widths and
@@ -31,10 +32,12 @@ impl DeerawApp {
             (*image).clone(),
             egui::TextureOptions::LINEAR,
         );
+        // Nearest sampling keeps the blocks sharp.
+        let mosaic = ctx.load_texture(format!("mosaic-{}", self.next_id), mosaic(&image), egui::TextureOptions::NEAREST);
         let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
         let min = (center - size / 2.0).round();
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv });
+        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv, mosaic });
     }
 
     /// For the first image on an empty canvas: resizes the window to show `size` (canvas pixels,

@@ -18,7 +18,8 @@ pub struct Object {
 #[derive(Clone, PartialEq)]
 pub enum Kind {
     /// `uv` is the part of the texture that's kept (0..1); cropping only changes `uv` and `rect`.
-    Image { texture: TextureHandle, uv: Rect },
+    /// `mosaic` is the texture pixelated (see `mosaic`), for blurs on it.
+    Image { texture: TextureHandle, uv: Rect, mosaic: TextureHandle },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     /// `pressures` (0..1, one per point, from drawing speed) are always recorded, but only
     /// used when `hand_drawn`: then the stroke is smoothed and its width varies.
@@ -33,6 +34,10 @@ pub enum Kind {
     /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
     /// Enter and resizing scales `font_px`. With `frame` (drag a box), see `TextFrame`.
     Text { text: String, font_px: f32, color: Color32, frame: Option<TextFrame> },
+    /// Pixelates the part `area` (0..1 of the whole, uncropped texture) of image `image`; `rect`
+    /// is derived from it, so it moves, resizes and crops with the image. Only the part inside
+    /// the image's kept area shows. Kept right above its image.
+    Blur { image: u64, area: Rect },
 }
 
 /// What the Shape tool draws.
@@ -152,6 +157,14 @@ impl Object {
         matches!(self.kind, Kind::Image { .. } | Kind::Text { .. } | Kind::Shape { .. })
     }
 
+    /// The image a blur is on.
+    pub fn blurred_image(&self) -> Option<u64> {
+        match self.kind {
+            Kind::Blur { image, .. } => Some(image),
+            _ => None,
+        }
+    }
+
     pub fn translate(&mut self, delta: Vec2) {
         self.rect = self.rect.translate(delta);
         if let Kind::Arrow { start, end, .. } = &mut self.kind {
@@ -160,10 +173,10 @@ impl Object {
         }
     }
 
-    /// `None` for images, which have no color.
+    /// `None` for images and blurs, which have no color.
     pub fn color_mut(&mut self) -> Option<&mut Color32> {
         match &mut self.kind {
-            Kind::Image { .. } => None,
+            Kind::Image { .. } | Kind::Blur { .. } => None,
             Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Shape { color, .. } | Kind::Text { color, .. } => Some(color),
         }
     }
@@ -209,10 +222,10 @@ impl Object {
         }
     }
 
-    /// Line width or font size, whichever the object has; `None` for images.
+    /// Line width or font size, whichever the object has; `None` for images and blurs.
     pub fn size_mut(&mut self) -> Option<(SizeKind, &mut f32)> {
         match &mut self.kind {
-            Kind::Image { .. } => None,
+            Kind::Image { .. } | Kind::Blur { .. } => None,
             Kind::Stroke { width, .. } | Kind::Arrow { width, .. } | Kind::Shape { width, .. } => Some((SizeKind::Line, width)),
             Kind::Text { font_px, .. } => Some((SizeKind::Font, font_px)),
         }
@@ -222,6 +235,7 @@ impl Object {
         let id = self.id;
         match &self.kind {
             Kind::Image { .. } => format!("Image #{id}"),
+            Kind::Blur { .. } => format!("Blur #{id}"),
             Kind::Stroke { .. } => format!("Stroke #{id}"),
             Kind::Arrow { heads: Some(_), .. } => format!("Arrow #{id}"),
             Kind::Arrow { heads: None, .. } => format!("Line #{id}"),

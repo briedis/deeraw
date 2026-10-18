@@ -7,7 +7,7 @@ use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_curso
 use crate::export::{Export, ExportTarget};
 use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom};
 use crate::object::{ArrowHeads, Kind, TextFrame};
-use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_object, paint_shape, text_layout_job};
+use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, speed_pressures};
 use crate::style::{Background, Style};
 
@@ -52,7 +52,13 @@ impl DeerawApp {
                         self.export = Some(Export::new(self.objects.clone(), ExportTarget::Clipboard));
                     }
                     egui::Event::Cut if !self.selected.is_empty() => {
-                        let cut = self.objects.iter().filter(|o| self.selected.contains(&o.id)).cloned().collect();
+                        // A cut image takes its blurs along, so what's blurred stays blurred.
+                        let cut = self
+                            .objects
+                            .iter()
+                            .filter(|o| [Some(o.id), o.blurred_image()].iter().flatten().any(|id| self.selected.contains(id)))
+                            .cloned()
+                            .collect();
                         self.export = Some(Export::new(cut, ExportTarget::Clipboard));
                         self.delete_selected();
                     }
@@ -70,6 +76,7 @@ impl DeerawApp {
                             egui::Key::A => Some(Tool::Arrow),
                             egui::Key::L => Some(Tool::Line),
                             egui::Key::S => Some(Tool::Shape),
+                            egui::Key::B => Some(Tool::Blur),
                             egui::Key::T => Some(Tool::Text),
                             egui::Key::C => {
                                 self.toggle_crop();
@@ -197,11 +204,13 @@ impl DeerawApp {
             for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
                 obj.translate(move_by);
             }
+            self.update_blur_areas();
         }
+        self.follow_blurs();
         self.follow_bindings();
         for obj in &self.objects {
             if self.editing != Some(obj.id) {
-                paint_object(&painter, obj, to_screen(obj.rect), to_screen_pos, scale);
+                paint_object(&painter, obj, &self.objects, to_screen(obj.rect), to_screen_pos, scale);
             }
         }
         if let Some((a, b)) = self.marquee {
@@ -238,6 +247,15 @@ impl DeerawApp {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
                 paint_shape(&painter, self.style.shape, rect, stroke, self.style.fill);
             }
+            Some(Drawing::Blur(image, a, b)) => {
+                // Until it reaches an image, just the box.
+                let mut area = Rect::from_two_pos(*a, *b);
+                if let Some(image) = self.objects.iter().find(|o| Some(o.id) == *image) {
+                    area = area.intersect(image.rect);
+                    paint_mosaic(&painter, image, area, to_screen_pos);
+                }
+                painter.rect_stroke(to_screen(area), 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
+            }
             None => {}
         }
 
@@ -248,6 +266,9 @@ impl DeerawApp {
                 self.connect_ui(ui, to_canvas, to_screen_pos);
             }
             self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
+            if self.resize_drag.is_some() {
+                self.update_blur_areas();
+            }
         }
         self.text_editor(ui, to_screen_pos, scale);
         // Registered after the objects and handles, so a space-drag doesn't reach them.
@@ -270,7 +291,8 @@ impl DeerawApp {
             && self.cropping.is_none()
             && self.drawing.is_none();
         if settled {
-            // Resizing (after painting) moved objects this frame; their arrows go in the same undo step.
+            // Resizing (after painting) moved objects this frame; their arrows and blurs go in the same undo step.
+            self.follow_blurs();
             self.follow_bindings();
             self.history.record(&self.objects);
         }
@@ -369,7 +391,7 @@ impl DeerawApp {
         // The cursor image is sticky between frames, so it must be cleared explicitly.
         let cursor = match self.tool {
             _ if !background.hovered() => None,
-            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
+            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape | Tool::Blur => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
             Tool::Text => Some(self.i_beam.get_or_insert_with(i_beam_cursor)),
             Tool::Select => None,
         };
@@ -473,6 +495,7 @@ impl DeerawApp {
                     self.finish_drawing();
                 }
             }
+            Tool::Blur => self.blur_tool(background, to_canvas),
             Tool::Text => {
                 // Click: single-line text centered vertically on the click.
                 if let (true, Some(p)) = (background.clicked(), pointer) {
@@ -524,6 +547,7 @@ impl DeerawApp {
                     self.add(rect.expand2((Vec2::splat(MIN_SIZE) - rect.size()).max(Vec2::ZERO) / 2.0), Kind::Shape { shape, color, width, fill });
                 }
             }
+            Some(Drawing::Blur(Some(image), a, b)) => self.add_blur(image, Rect::from_two_pos(a, b)),
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);
                 // Too narrow to be deliberate: treat it as a click.
