@@ -1,4 +1,4 @@
-//! Objects on the canvas: images, strokes, arrows/lines and text.
+//! Objects on the canvas: images, strokes, arrows/lines, shapes and text.
 
 use eframe::egui::{Align2, Color32, Pos2, Rect, TextureHandle, Vec2};
 
@@ -27,9 +27,33 @@ pub enum Kind {
     /// Without `heads` it's a plain line (Line tool). `bindings` (start, end) attach an endpoint
     /// to a side of a text or image object, which it then follows.
     Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, heads: Option<ArrowHeads>, bindings: [Option<Binding>; 2] },
+    /// A rectangle, ellipse or diamond filling `rect`, outlined `width` wide; `fill` `None` is
+    /// outline only (then it's grabbed only near the outline).
+    Shape { shape: Shape, color: Color32, width: f32, fill: Option<Color32> },
     /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
     /// Enter and resizing scales `font_px`. With `frame` (drag a box), see `TextFrame`.
     Text { text: String, font_px: f32, color: Color32, frame: Option<TextFrame> },
+}
+
+/// What the Shape tool draws.
+#[derive(Clone, Copy, Default, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum Shape {
+    #[default]
+    Rectangle,
+    Ellipse,
+    Diamond,
+}
+
+impl Shape {
+    pub const ALL: [Shape; 3] = [Shape::Rectangle, Shape::Ellipse, Shape::Diamond];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Shape::Rectangle => "Rectangle",
+            Shape::Ellipse => "Ellipse",
+            Shape::Diamond => "Diamond",
+        }
+    }
 }
 
 /// What an arrow has at its start and at its end.
@@ -123,9 +147,9 @@ pub fn anchor(rect: Rect, side: Side) -> Pos2 {
 }
 
 impl Object {
-    /// Text and images; arrows attach to them.
+    /// Text, images and shapes; arrows attach to them.
     pub fn bindable(&self) -> bool {
-        matches!(self.kind, Kind::Image { .. } | Kind::Text { .. })
+        matches!(self.kind, Kind::Image { .. } | Kind::Text { .. } | Kind::Shape { .. })
     }
 
     pub fn translate(&mut self, delta: Vec2) {
@@ -140,7 +164,7 @@ impl Object {
     pub fn color_mut(&mut self) -> Option<&mut Color32> {
         match &mut self.kind {
             Kind::Image { .. } => None,
-            Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Text { color, .. } => Some(color),
+            Kind::Stroke { color, .. } | Kind::Arrow { color, .. } | Kind::Shape { color, .. } | Kind::Text { color, .. } => Some(color),
         }
     }
 
@@ -168,9 +192,18 @@ impl Object {
         }
     }
 
-    /// Background, for text boxes only.
+    /// Which shape, for shapes only.
+    pub fn shape_mut(&mut self) -> Option<&mut Shape> {
+        match &mut self.kind {
+            Kind::Shape { shape, .. } => Some(shape),
+            _ => None,
+        }
+    }
+
+    /// Background, for text boxes and shapes.
     pub fn fill_mut(&mut self) -> Option<&mut Option<Color32>> {
         match &mut self.kind {
+            Kind::Shape { fill, .. } => Some(fill),
             Kind::Text { frame: Some(frame), .. } => Some(&mut frame.fill),
             _ => None,
         }
@@ -180,7 +213,7 @@ impl Object {
     pub fn size_mut(&mut self) -> Option<(SizeKind, &mut f32)> {
         match &mut self.kind {
             Kind::Image { .. } => None,
-            Kind::Stroke { width, .. } | Kind::Arrow { width, .. } => Some((SizeKind::Line, width)),
+            Kind::Stroke { width, .. } | Kind::Arrow { width, .. } | Kind::Shape { width, .. } => Some((SizeKind::Line, width)),
             Kind::Text { font_px, .. } => Some((SizeKind::Font, font_px)),
         }
     }
@@ -192,6 +225,7 @@ impl Object {
             Kind::Stroke { .. } => format!("Stroke #{id}"),
             Kind::Arrow { heads: Some(_), .. } => format!("Arrow #{id}"),
             Kind::Arrow { heads: None, .. } => format!("Line #{id}"),
+            Kind::Shape { shape, .. } => format!("{} #{id}", shape.name()),
             Kind::Text { text, .. } => {
                 let first: String = text.lines().next().unwrap_or("").chars().take(20).collect();
                 format!("Text #{id} \"{first}\"")

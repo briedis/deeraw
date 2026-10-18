@@ -5,9 +5,9 @@ use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, 
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
-use crate::geometry::{MIN_SIZE, distance_to_segment, normalize, pan_for_zoom};
+use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom};
 use crate::object::{ArrowHeads, Kind, TextFrame};
-use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_object, text_layout_job};
+use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_object, paint_shape, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, speed_pressures};
 use crate::style::{Background, Style};
 
@@ -69,6 +69,7 @@ impl DeerawApp {
                             egui::Key::P => Some(Tool::Pencil),
                             egui::Key::A => Some(Tool::Arrow),
                             egui::Key::L => Some(Tool::Line),
+                            egui::Key::S => Some(Tool::Shape),
                             egui::Key::T => Some(Tool::Text),
                             egui::Key::C => {
                                 self.toggle_crop();
@@ -139,8 +140,15 @@ impl DeerawApp {
             }
             let rect = to_screen(obj.rect);
             let id = egui::Id::unique(("object", obj.id));
-            // Arrows are only grabbed near their line, not anywhere in their bounding box.
+            // Arrows and unfilled shapes are only grabbed near their line, not anywhere in their
+            // bounding box (a selected shape is, so it's easy to move).
             let hit = match obj.kind {
+                Kind::Shape { shape, width, fill: None, .. } if !self.selected.contains(&obj.id) => {
+                    let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
+                        distance_to_outline(shape, rect, p) <= ARROW_HIT_DISTANCE + width * scale / 2.0
+                    });
+                    near || ui.ctx().is_being_dragged(id)
+                }
                 Kind::Arrow { start, end, width, .. } => {
                     let near = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
                         distance_to_segment(p, to_screen_pos(start), to_screen_pos(end))
@@ -224,6 +232,11 @@ impl DeerawApp {
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
                 painter.rect_stroke(rect, 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
+            }
+            Some(Drawing::Shape(a, b)) => {
+                let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
+                let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
+                paint_shape(&painter, self.style.shape, rect, stroke, self.style.fill);
             }
             None => {}
         }
@@ -356,7 +369,7 @@ impl DeerawApp {
         // The cursor image is sticky between frames, so it must be cleared explicitly.
         let cursor = match self.tool {
             _ if !background.hovered() => None,
-            Tool::Pencil | Tool::Arrow | Tool::Line => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
+            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
             Tool::Text => Some(self.i_beam.get_or_insert_with(i_beam_cursor)),
             Tool::Select => None,
         };
@@ -444,6 +457,22 @@ impl DeerawApp {
                     self.finish_drawing();
                 }
             }
+            Tool::Shape => {
+                // Drag from corner to corner; Shift makes it a square (or circle).
+                if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
+                    let origin = background.ctx.input(|i| i.pointer.press_origin()).map_or(p, &to_canvas);
+                    self.drawing = Some(Drawing::Shape(origin, p));
+                }
+                let shift = background.ctx.input(|i| i.modifiers.shift);
+                if let (true, Some(p), Some(Drawing::Shape(start, end))) =
+                    (background.dragged_by(PointerButton::Primary), pointer, &mut self.drawing)
+                {
+                    *end = if shift { square_corner(*start, p) } else { p };
+                }
+                if background.drag_stopped() {
+                    self.finish_drawing();
+                }
+            }
             Tool::Text => {
                 // Click: single-line text centered vertically on the click.
                 if let (true, Some(p)) = (background.clicked(), pointer) {
@@ -487,6 +516,13 @@ impl DeerawApp {
                 let Style { color, line_width: width, arrow_heads, .. } = self.style;
                 let heads = (self.tool != Tool::Line).then_some(arrow_heads);
                 self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings });
+            }
+            Some(Drawing::Shape(a, b)) => {
+                let rect = Rect::from_two_pos(a, b);
+                if rect.width().max(rect.height()) >= MIN_SIZE {
+                    let Style { color, line_width: width, shape, fill, .. } = self.style;
+                    self.add(rect.expand2((Vec2::splat(MIN_SIZE) - rect.size()).max(Vec2::ZERO) / 2.0), Kind::Shape { shape, color, width, fill });
+                }
             }
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);
@@ -578,4 +614,11 @@ impl DeerawApp {
             self.selected = vec![id];
         }
     }
+}
+
+/// The corner opposite `start` of the square spanning to `p` (its larger side).
+fn square_corner(start: Pos2, p: Pos2) -> Pos2 {
+    let d = p - start;
+    let side = d.x.abs().max(d.y.abs());
+    start + Vec2::new(side * d.x.signum(), side * d.y.signum())
 }

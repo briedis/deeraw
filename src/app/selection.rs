@@ -112,9 +112,9 @@ impl DeerawApp {
             if let (true, Some(p), Some(drag)) =
                 (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
             {
-                // Plain text keeps whatever aspect the layout gives it; text boxes resize freely.
+                // Plain text keeps whatever aspect the layout gives it; text boxes and shapes resize freely.
                 let aspect = match obj.kind {
-                    Kind::Text { frame: Some(_), .. } => None,
+                    Kind::Text { frame: Some(_), .. } | Kind::Shape { .. } => None,
                     Kind::Text { .. } => Some(drag.start.aspect_ratio()),
                     _ => Some(obj.aspect),
                 };

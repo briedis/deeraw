@@ -133,6 +133,10 @@ pub enum Icon {
     Arrow,
     Line,
     Text,
+    Rectangle,
+    /// Painted as a circle, not from strokes.
+    Ellipse,
+    Diamond,
     Crop,
     StrokeWidth,
 }
@@ -156,6 +160,9 @@ impl Icon {
                 (&[[16.0, 6.0], [16.0, 26.0]], false, W),
                 (&[[12.0, 26.0], [20.0, 26.0]], false, W),
             ],
+            Icon::Rectangle => &[(&[[5.0, 7.0], [27.0, 7.0], [27.0, 25.0], [5.0, 25.0]], true, W)],
+            Icon::Ellipse => &[],
+            Icon::Diamond => &[(&[[16.0, 4.0], [28.0, 16.0], [16.0, 28.0], [4.0, 16.0]], true, W)],
             Icon::Crop => &[
                 (&[[8.0, 3.0], [8.0, 24.0], [29.0, 24.0]], false, W),
                 (&[[24.0, 29.0], [24.0, 8.0], [3.0, 8.0]], false, W),
@@ -182,6 +189,9 @@ pub fn icon_button(ui: &mut egui::Ui, selected: bool, icon: Icon, size: f32, hin
         let stroke = Stroke::new(width * scale, color);
         let path = if closed { PathShape::closed_line(points, stroke) } else { PathShape::line(points, stroke) };
         ui.painter().add(path);
+    }
+    if let Icon::Ellipse = icon {
+        ui.painter().circle_stroke(origin + Vec2::splat(size / 2.0), 11.0 * scale, Stroke::new(W * scale, color));
     }
     response.clicked()
 }

@@ -48,6 +48,7 @@ enum Tool {
     Pencil,
     Arrow,
     Line,
+    Shape,
     Text,
 }
 
@@ -70,13 +71,15 @@ struct Notice {
     shown_at: f64,
 }
 
-/// A stroke, arrow or text box being drawn, in canvas pixels.
+/// A stroke, arrow, shape or text box being drawn, in canvas pixels.
 enum Drawing {
     /// Points and when each was added (seconds), for the speed-based pressure.
     Stroke(Vec<Pos2>, Vec<f64>),
     /// Start, end, and what each is attached to.
     Arrow(Pos2, Pos2, [Option<Binding>; 2]),
     TextBox(Pos2, Pos2),
+    /// Two opposite corners.
+    Shape(Pos2, Pos2),
 }
 
 #[derive(Default)]

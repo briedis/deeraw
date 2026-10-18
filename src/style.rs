@@ -2,7 +2,7 @@
 
 use eframe::egui::{Align2, Color32, CornerRadius, Stroke, Visuals};
 
-use crate::object::ArrowHeads;
+use crate::object::{ArrowHeads, Shape};
 
 /// Colors offered by the style panel; the first is the default.
 pub const PALETTE: [(Color32, &str); 6] = [
@@ -13,7 +13,7 @@ pub const PALETTE: [(Color32, &str); 6] = [
     (Color32::from_rgb(47, 158, 68), "Green"),
     (Color32::from_rgb(25, 113, 194), "Blue"),
 ];
-/// Line widths (pencil strokes and arrows) offered by the style panel, in canvas pixels.
+/// Line widths (pencil strokes, arrows and shape outlines) offered by the style panel, in canvas pixels.
 pub const LINE_WIDTHS: [f32; 4] = [2.0, 3.0, 6.0, 10.0];
 /// Font sizes offered by the style panel, in canvas pixels.
 pub const FONT_SIZES: [f32; 4] = [16.0, 28.0, 44.0, 64.0];
@@ -27,6 +27,8 @@ pub enum StyleSection {
     Size(SizeKind),
     /// Plain or hand-drawn pencil strokes.
     Pen,
+    /// Rectangle, ellipse or diamond.
+    Shape,
     /// What an arrow has at its start.
     StartHead,
     /// What an arrow has at its end.
@@ -55,14 +57,17 @@ pub struct Style {
     pub hand_drawn: bool,
     /// For arrows.
     pub arrow_heads: ArrowHeads,
+    /// For the Shape tool.
+    pub shape: Shape,
     /// For text boxes.
     pub align: Align2,
+    /// For text boxes and shapes; `None` is transparent (shapes are outline only).
     pub fill: Option<Color32>,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), align: Align2::LEFT_TOP, fill: None }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), align: Align2::LEFT_TOP, fill: None }
     }
 }
 

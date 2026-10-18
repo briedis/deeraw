@@ -1,11 +1,11 @@
 //! UI around the canvas: layers panel, toolbar, style panel and the corner controls.
 
-use eframe::egui::{self, Align2, CursorIcon, Pos2, Rect, Sense, Vec2};
+use eframe::egui::{self, Align2, Color32, CursorIcon, Pos2, Rect, Sense, Vec2};
 
 use super::{DeerawApp, Tool};
 use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
-use crate::object::{ArrowHeads, Head, Kind};
+use crate::object::{ArrowHeads, Head, Kind, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
 use crate::widgets::{Icon, align_button, arrow_head_button, align_name, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
 
@@ -53,6 +53,9 @@ impl DeerawApp {
                     Kind::Stroke { points, width, hand_drawn, .. } => {
                         let pen = if *hand_drawn { ", hand-drawn" } else { "" };
                         info += &format!("\n{} points, width {width:.0}px{pen}", points.len())
+                    }
+                    Kind::Shape { width, fill, .. } => {
+                        info += &format!("\nwidth {width:.0}px, {}", fill_name(*fill));
                     }
                     Kind::Text { font_px, frame, .. } => {
                         info += &format!("\nfont {font_px:.0}px");
@@ -167,7 +170,7 @@ impl DeerawApp {
             _ => (0..self.objects.len()).filter(|&i| self.editing == Some(self.objects[i].id)).collect(),
         };
         let (show_color, size_kinds) = match self.tool {
-            Tool::Pencil | Tool::Arrow | Tool::Line => (true, vec![SizeKind::Line]),
+            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape => (true, vec![SizeKind::Line]),
             Tool::Text => (true, vec![SizeKind::Font]),
             Tool::Select => {
                 let kinds: Vec<SizeKind> = targets.iter().filter_map(|&i| self.objects[i].size_mut().map(|(k, _)| k)).collect();
@@ -217,6 +220,20 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].align_mut().map(|a| *a))
             .unwrap_or(self.style.align);
+        let show_shape = match self.tool {
+            Tool::Shape => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].shape_mut().is_some()),
+            _ => false,
+        };
+        let shape = targets
+            .iter()
+            .find_map(|&i| self.objects[i].shape_mut().map(|s| *s))
+            .unwrap_or(self.style.shape);
+        let show_fill = match self.tool {
+            Tool::Text | Tool::Shape => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].fill_mut().is_some()),
+            _ => false,
+        };
         let fill = targets
             .iter()
             .find_map(|&i| self.objects[i].fill_mut().map(|f| *f))
@@ -224,7 +241,9 @@ impl DeerawApp {
         match self.style_open {
             Some(StyleSection::Color) if !show_color => self.style_open = None,
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
-            Some(StyleSection::Align | StyleSection::Fill) if !show_align => self.style_open = None,
+            Some(StyleSection::Align) if !show_align => self.style_open = None,
+            Some(StyleSection::Fill) if !show_fill => self.style_open = None,
+            Some(StyleSection::Shape) if !show_shape => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
             Some(StyleSection::StartHead | StyleSection::EndHead) if !show_heads => self.style_open = None,
             _ => {}
@@ -236,6 +255,7 @@ impl DeerawApp {
         let mut new_fill = None;
         let mut new_pen = None;
         let mut new_heads = None;
+        let mut new_shape = None;
         // The stack above the toolbar grows upwards: this panel, then the open section's options.
         let mut top = toolbar.top();
         if show_color {
@@ -247,6 +267,9 @@ impl DeerawApp {
                     ui.set_visuals(canvas_ui_visuals(self.background));
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {
+                            if show_shape {
+                                self.style_toggle(ui, StyleSection::Shape, |ui, open| icon_button(ui, open, shape_icon(shape), 14.0, shape.name()));
+                            }
                             let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
                             self.style_toggle(ui, StyleSection::Color, |ui, open| color_swatch(ui, open, name, Some(color)));
                             for &(kind, size) in &sizes {
@@ -268,14 +291,9 @@ impl DeerawApp {
                             }
                             if show_align {
                                 self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, align));
-                                let name = match fill {
-                                    None => "Background: transparent".to_owned(),
-                                    Some(fill) => {
-                                        let name = PALETTE.iter().find(|(c, _)| *c == fill).map_or("color", |(_, n)| n);
-                                        format!("Background: {name}")
-                                    }
-                                };
-                                self.style_toggle(ui, StyleSection::Fill, |ui, open| color_swatch(ui, open, &name, fill));
+                            }
+                            if show_fill {
+                                self.style_toggle(ui, StyleSection::Fill, |ui, open| color_swatch(ui, open, &fill_name(fill), fill));
                             }
                         });
                     });
@@ -295,6 +313,13 @@ impl DeerawApp {
                             StyleSection::Background => {
                                 if self.background_picker(ui) {
                                     self.style_open = None;
+                                }
+                            }
+                            StyleSection::Shape => {
+                                for option in Shape::ALL {
+                                    if icon_button(ui, shape == option, shape_icon(option), 14.0, option.name()) {
+                                        new_shape = Some(option);
+                                    }
                                 }
                             }
                             StyleSection::Color => {
@@ -362,7 +387,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() {
             return;
         }
         self.style_open = None;
@@ -395,6 +420,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(h) = self.objects[i].arrow_heads_mut() {
                     *h = heads;
+                }
+            }
+        }
+        if let Some(shape) = new_shape {
+            self.style.shape = shape;
+            for &i in &targets {
+                if let Some(s) = self.objects[i].shape_mut() {
+                    *s = shape;
                 }
             }
         }
@@ -469,6 +502,7 @@ impl DeerawApp {
                             (Tool::Pencil, Icon::Pencil, "Pencil (P)"),
                             (Tool::Arrow, Icon::Arrow, "Arrow (A)"),
                             (Tool::Line, Icon::Line, "Line (L)"),
+                            (Tool::Shape, shape_icon(self.style.shape), "Shape (S)"),
                             (Tool::Text, Icon::Text, "Text (T)"),
                         ] {
                             let button = ui.scope(|ui| icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint));
@@ -512,9 +546,27 @@ fn drawing_tool(kind: &Kind) -> Option<Tool> {
         Kind::Stroke { .. } => Some(Tool::Pencil),
         Kind::Arrow { heads: Some(_), .. } => Some(Tool::Arrow),
         Kind::Arrow { .. } => Some(Tool::Line),
+        Kind::Shape { .. } => Some(Tool::Shape),
         Kind::Text { .. } => Some(Tool::Text),
         Kind::Image { .. } => None,
     }
+}
+
+fn shape_icon(shape: Shape) -> Icon {
+    match shape {
+        Shape::Rectangle => Icon::Rectangle,
+        Shape::Ellipse => Icon::Ellipse,
+        Shape::Diamond => Icon::Diamond,
+    }
+}
+
+/// E.g. "fill: transparent", "fill: Red".
+fn fill_name(fill: Option<Color32>) -> String {
+    let name = match fill {
+        None => "transparent",
+        Some(fill) => PALETTE.iter().find(|(c, _)| *c == fill).map_or("color", |(_, n)| n),
+    };
+    format!("Fill: {name}")
 }
 
 /// An area placed by a pivot other than its top left corner is positioned using last frame's

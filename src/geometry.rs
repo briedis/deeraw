@@ -2,6 +2,8 @@
 
 use eframe::egui::{Pos2, Rect, Vec2};
 
+use crate::object::Shape;
+
 /// Smallest width/height an object can have, in canvas pixels.
 pub const MIN_SIZE: f32 = 4.0;
 
@@ -17,6 +19,33 @@ pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
     let t = ((p - a).dot(ab) / ab.length_sq().max(f32::EPSILON)).clamp(0.0, 1.0);
     p.distance(a + ab * t)
+}
+
+/// The corners of the diamond filling `rect`: top, right, bottom, left.
+pub fn diamond(rect: Rect) -> [Pos2; 4] {
+    [rect.center_top(), rect.right_center(), rect.center_bottom(), rect.left_center()]
+}
+
+/// Roughly how far `p` is from the outline of `shape` filling `rect` (exact for rectangles and
+/// diamonds; for ellipses, measured along the line to the center).
+pub fn distance_to_outline(shape: Shape, rect: Rect, p: Pos2) -> f32 {
+    match shape {
+        Shape::Rectangle => rect.signed_distance_to_pos(p).abs(),
+        Shape::Diamond => {
+            let c = diamond(rect);
+            (0..4).map(|i| distance_to_segment(p, c[i], c[(i + 1) % 4])).fold(f32::INFINITY, f32::min)
+        }
+        Shape::Ellipse => {
+            let radius = (rect.size() / 2.0).max(Vec2::splat(f32::EPSILON));
+            let offset = p - rect.center();
+            let along = (offset / radius).length();
+            if along < f32::EPSILON {
+                return radius.min_elem();
+            }
+            // Where the line from the center through `p` crosses the ellipse.
+            offset.length() * (1.0 - 1.0 / along).abs()
+        }
+    }
 }
 
 /// Returns the bounding box of `points` (at least `MIN_SIZE` on each axis)
@@ -80,6 +109,18 @@ pub fn resize_to(start: Rect, dx: i32, dy: i32, target: Pos2, aspect: Option<f32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn distance_to_shape_outlines() {
+        let r = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 50.0));
+        assert_eq!(distance_to_outline(Shape::Rectangle, r, Pos2::new(50.0, 25.0)), 25.0);
+        assert_eq!(distance_to_outline(Shape::Rectangle, r, Pos2::new(110.0, 25.0)), 10.0);
+        assert!(distance_to_outline(Shape::Diamond, r, Pos2::new(50.0, 0.0)) < 0.01);
+        assert!(distance_to_outline(Shape::Diamond, r, Pos2::new(5.0, 5.0)) > 10.0);
+        assert!(distance_to_outline(Shape::Ellipse, r, Pos2::new(100.0, 25.0)) < 0.01);
+        assert!((distance_to_outline(Shape::Ellipse, r, Pos2::new(120.0, 25.0)) - 20.0).abs() < 0.01);
+        assert_eq!(distance_to_outline(Shape::Ellipse, r, Pos2::new(50.0, 25.0)), 25.0);
+    }
 
     fn rect(x0: f32, y0: f32, x1: f32, y1: f32) -> Rect {
         Rect::from_min_max(Pos2::new(x0, y0), Pos2::new(x1, y1))

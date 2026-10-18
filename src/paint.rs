@@ -2,9 +2,10 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2, emath::Rot2, epaint::PathShape};
+use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
 
-use crate::object::{ArrowHeads, Head, Kind, Object, TextFrame};
+use crate::geometry::diamond;
+use crate::object::{ArrowHeads, Head, Kind, Object, Shape, TextFrame};
 use crate::stroke::paint_hand_drawn;
 
 /// Length of an arrow's head, in canvas pixels: base plus this much per pixel of line width.
@@ -31,6 +32,9 @@ pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: 
         Kind::Arrow { start, end, color, width, heads, .. } => {
             let stroke = Stroke::new(width * scale, *color);
             paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads.unwrap_or(ArrowHeads::NONE));
+        }
+        Kind::Shape { shape, color, width, fill } => {
+            paint_shape(painter, *shape, rect, Stroke::new(width * scale, *color), *fill);
         }
         Kind::Text { text, font_px, color, frame } => {
             let frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
@@ -60,6 +64,36 @@ pub fn text_layout_job(text: &str, font: FontId, color: Color32, frame: Option<T
         job.halign = frame.align.x();
     }
     job
+}
+
+/// Draws `shape` filling `rect` (screen points), the outline centered on its edge.
+pub fn paint_shape(painter: &Painter, shape: Shape, rect: Rect, stroke: Stroke, fill: Option<Color32>) {
+    let fill = fill.unwrap_or(Color32::TRANSPARENT);
+    match shape {
+        Shape::Rectangle => {
+            painter.rect(rect, 0.0, fill, stroke, StrokeKind::Middle);
+        }
+        Shape::Ellipse => {
+            painter.add(PathShape::convex_polygon(ellipse_points(painter, rect), fill, stroke));
+        }
+        Shape::Diamond => {
+            painter.add(PathShape::convex_polygon(diamond(rect).to_vec(), fill, stroke));
+        }
+    }
+}
+
+/// Points around the ellipse filling `rect` (screen points), about every 2 pixels so it's
+/// smooth at any size (egui's own ellipse uses as few as 8 points per quarter).
+fn ellipse_points(painter: &Painter, rect: Rect) -> Vec<Pos2> {
+    let radius = rect.size() / 2.0;
+    let pixels = std::f32::consts::TAU * radius.max_elem() * painter.pixels_per_point();
+    let count = (pixels / 2.0).clamp(32.0, 1024.0) as usize;
+    (0..count)
+        .map(|i| {
+            let angle = std::f32::consts::TAU * i as f32 / count as f32;
+            rect.center() + Vec2::new(radius.x * angle.cos(), radius.y * angle.sin())
+        })
+        .collect()
 }
 
 /// Draws a line from `start` to `end` (screen points) with `heads`; they grow with the stroke
