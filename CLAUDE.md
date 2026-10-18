@@ -212,6 +212,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip) on every push/PR; a `v*` tag publishes a release.
 - Git repo on `master`; commit after each working step.
+- Never add a `Co-Authored-By:` trailer (or any other co-author credit) to a commit. Commits are
+  authored by the repo owner alone, whoever or whatever wrote the code.
 
 ## Planned next steps
 
