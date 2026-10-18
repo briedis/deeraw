@@ -19,6 +19,8 @@ pub const FONT_SIZES: [f32; 4] = [16.0, 28.0, 44.0, 64.0];
 /// Which part of the style panel is expanded.
 #[derive(Clone, Copy, PartialEq)]
 pub enum StyleSection {
+    /// The canvas background (its button is in the toolbar).
+    Background,
     Color,
     Size(SizeKind),
     /// Plain or hand-drawn pencil strokes.

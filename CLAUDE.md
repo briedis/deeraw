@@ -60,7 +60,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected; after a vertical separator, the canvas background (a single swatch that opens the others above it, an egui `Popup`) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar (and its background popup) and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Text, plus Crop while exactly one image is selected; after a vertical separator, the canvas background (a single swatch that opens the others, like a style panel section) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
@@ -114,7 +114,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    are kept; existing objects are not recolored). Not in undo history.
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
-   either expands its options upwards (picking one collapses it again). Colors: black, white,
+   either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,
    red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
    also get an alignment button (3×3 grid) and a background button (transparent or a palette color).

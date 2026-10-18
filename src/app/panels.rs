@@ -12,6 +12,8 @@ use crate::widgets::{Icon, align_button, align_name, color_swatch, color_swatch_
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
 const NOTICE_FADE: f64 = 0.5;
+/// Between the toolbar, the style panel and the options above it, in points.
+const STACK_GAP: f32 = 6.0;
 /// Toolbar icons, in points.
 const TOOLBAR_ICON_SIZE: f32 = 24.0;
 
@@ -122,38 +124,37 @@ impl DeerawApp {
             Background::Black => "Canvas background: black",
         };
         let button = Vec2::splat(TOOLBAR_ICON_SIZE) + Vec2::new(12.0, 8.0);
-        let response = color_swatch_sized(ui, false, name, self.background.color(), button, 18.0);
-        let visuals = canvas_ui_visuals(self.background);
-        egui::Popup::from_toggle_button_response(&response)
-            .align(egui::RectAlign::TOP)
-            .gap(10.0)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
-            .style(move |style: &mut egui::Style| style.visuals = visuals.clone())
-            .show(|ui| self.background_picker(ui));
-    }
-
-    pub(super) fn background_picker(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            for (background, name) in [
-                (Background::Transparent, "Transparent background"),
-                (Background::White, "White background"),
-                (Background::Black, "Black background"),
-            ] {
-                let clicked = color_swatch(ui, self.background == background, name, background.color());
-                if clicked {
-                    // Drawing with the old background's default ink switches to the new one's
-                    // (black on black would be invisible); a picked color like red stays.
-                    if self.style.color == self.background.ink() {
-                        self.style.color = background.ink();
-                    }
-                    self.background = background;
-                }
-            }
+        let color = self.background.color();
+        self.style_toggle(ui, StyleSection::Background, |ui, open| {
+            color_swatch_sized(ui, open, name, color, button, 18.0).clicked()
         });
     }
 
-    /// Just above the toolbar: the current color and line width / font size. Clicking either
-    /// expands its options upwards. With a drawing tool it sets the style of new objects; with
+    /// The canvas backgrounds to pick from; true when one was clicked.
+    fn background_picker(&mut self, ui: &mut egui::Ui) -> bool {
+        let mut clicked_any = false;
+        for (background, name) in [
+                (Background::Transparent, "Transparent background"),
+            (Background::White, "White background"),
+            (Background::Black, "Black background"),
+        ] {
+            if color_swatch(ui, self.background == background, name, background.color()) {
+                // Drawing with the old background's default ink switches to the new one's
+                // (black on black would be invisible); a picked color like red stays.
+                if self.style.color == self.background.ink() {
+                    self.style.color = background.ink();
+                }
+                self.background = background;
+                clicked_any = true;
+            }
+        }
+        clicked_any
+    }
+
+    /// Just above the toolbar, centered above the current tool (with Select, the tool that draws
+    /// the first selected object): the current color and line width / font size. Clicking either
+    /// expands its options upwards, centered above that button (as does the toolbar's background
+    /// swatch, above this panel if it's shown). With a drawing tool it sets the style of new objects; with
     /// the Select tool it restyles the selected objects, each setting only those that have it
     /// (a mix of strokes and text shows both a line width and a font size).
     pub(super) fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
@@ -170,10 +171,6 @@ impl DeerawApp {
                 (!kinds.is_empty(), size_kinds)
             }
         };
-        if !show_color {
-            self.style_open = None;
-            return;
-        }
         // Current values: the first selected object that has the setting, else the defaults.
         let color = targets
             .iter()
@@ -212,6 +209,7 @@ impl DeerawApp {
             .find_map(|&i| self.objects[i].fill_mut().map(|f| *f))
             .unwrap_or(self.style.fill);
         match self.style_open {
+            Some(StyleSection::Color) if !show_color => self.style_open = None,
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
             Some(StyleSection::Align | StyleSection::Fill) if !show_align => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
@@ -223,84 +221,30 @@ impl DeerawApp {
         let mut new_align = None;
         let mut new_fill = None;
         let mut new_pen = None;
-        let area = egui::Area::new(egui::Id::unique("style"))
-            .pivot(Align2::CENTER_BOTTOM)
-            .fixed_pos(toolbar.center_top() - Vec2::new(0.0, 6.0))
-            .order(egui::Order::Foreground)
-            .show(ui.ctx(), |ui| {
-                ui.set_visuals(canvas_ui_visuals(self.background));
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    if let Some(section) = self.style_open {
-                        egui::Frame::popup(ui.style()).show(ui, |ui| {
-                            ui.horizontal(|ui| match section {
-                                StyleSection::Color => {
-                                    for (swatch, name) in PALETTE {
-                                        if color_swatch(ui, color == swatch, name, Some(swatch)) {
-                                            new_color = Some(swatch);
-                                        }
-                                    }
-                                }
-                                StyleSection::Size(kind) => {
-                                    let current = sizes.iter().find(|(k, _)| *k == kind).map(|(_, s)| *s);
-                                    let options = match kind {
-                                        SizeKind::Line => LINE_WIDTHS,
-                                        SizeKind::Font => FONT_SIZES,
-                                    };
-                                    for option in options {
-                                        if size_button(ui, current == Some(option), kind, option) {
-                                            new_size = Some((kind, option));
-                                        }
-                                    }
-                                }
-                                StyleSection::Pen => {
-                                    for option in [false, true] {
-                                        if pen_button(ui, hand_drawn == option, option) {
-                                            new_pen = Some(option);
-                                        }
-                                    }
-                                }
-                                StyleSection::Fill => {
-                                    if color_swatch(ui, fill.is_none(), "Transparent", None) {
-                                        new_fill = Some(None);
-                                    }
-                                    for (swatch, name) in PALETTE {
-                                        if color_swatch(ui, fill == Some(swatch), name, Some(swatch)) {
-                                            new_fill = Some(Some(swatch));
-                                        }
-                                    }
-                                }
-                                StyleSection::Align => {
-                                    ui.vertical(|ui| {
-                                        for y in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                            ui.horizontal(|ui| {
-                                                for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                                    let option = Align2([x, y]);
-                                                    if align_button(ui, align == option, option) {
-                                                        new_align = Some(option);
-                                                    }
-                                                }
-                                            });
-                                        }
-                                    });
-                                }
-                            });
-                        });
-                    }
+        // The stack above the toolbar grows upwards: this panel, then the open section's options.
+        let mut top = toolbar.top();
+        if show_color {
+            let area = egui::Area::new(egui::Id::unique("style"))
+                .pivot(Align2::CENTER_BOTTOM)
+                .fixed_pos(Pos2::new(self.tool_anchor.x, toolbar.top() - STACK_GAP))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    ui.set_visuals(canvas_ui_visuals(self.background));
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {
                             let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
-                            self.style_toggle(StyleSection::Color, |open| color_swatch(ui, open, name, Some(color)));
+                            self.style_toggle(ui, StyleSection::Color, |ui, open| color_swatch(ui, open, name, Some(color)));
                             for &(kind, size) in &sizes {
-                                self.style_toggle(StyleSection::Size(kind), |open| match kind {
+                                self.style_toggle(ui, StyleSection::Size(kind), |ui, open| match kind {
                                     SizeKind::Line => icon_button(ui, open, Icon::StrokeWidth, 14.0, &format!("Line width: {size:.0}px")),
                                     SizeKind::Font => size_button(ui, open, kind, size),
                                 });
                             }
                             if show_pen {
-                                self.style_toggle(StyleSection::Pen, |open| pen_button(ui, open, hand_drawn));
+                                self.style_toggle(ui, StyleSection::Pen, |ui, open| pen_button(ui, open, hand_drawn));
                             }
                             if show_align {
-                                self.style_toggle(StyleSection::Align, |open| align_button(ui, open, align));
+                                self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, align));
                                 let name = match fill {
                                     None => "Background: transparent".to_owned(),
                                     Some(fill) => {
@@ -308,13 +252,83 @@ impl DeerawApp {
                                         format!("Background: {name}")
                                     }
                                 };
-                                self.style_toggle(StyleSection::Fill, |open| color_swatch(ui, open, &name, fill));
+                                self.style_toggle(ui, StyleSection::Fill, |ui, open| color_swatch(ui, open, &name, fill));
                             }
                         });
                     });
                 });
-            });
-        redo_frame_if_resized(ui.ctx(), &area.response);
+            redo_frame_if_resized(ui.ctx(), &area.response);
+            top = area.response.rect.top();
+        }
+        if let Some(section) = self.style_open {
+            let area = egui::Area::new(egui::Id::unique("style-options"))
+                .pivot(Align2::CENTER_BOTTOM)
+                .fixed_pos(Pos2::new(self.style_anchor.x, top - STACK_GAP))
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    ui.set_visuals(canvas_ui_visuals(self.background));
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.horizontal(|ui| match section {
+                            StyleSection::Background => {
+                                if self.background_picker(ui) {
+                                    self.style_open = None;
+                                }
+                            }
+                            StyleSection::Color => {
+                                for (swatch, name) in PALETTE {
+                                    if color_swatch(ui, color == swatch, name, Some(swatch)) {
+                                        new_color = Some(swatch);
+                                    }
+                                }
+                            }
+                            StyleSection::Size(kind) => {
+                                let current = sizes.iter().find(|(k, _)| *k == kind).map(|(_, s)| *s);
+                                let options = match kind {
+                                    SizeKind::Line => LINE_WIDTHS,
+                                    SizeKind::Font => FONT_SIZES,
+                                };
+                                for option in options {
+                                    if size_button(ui, current == Some(option), kind, option) {
+                                        new_size = Some((kind, option));
+                                    }
+                                }
+                            }
+                            StyleSection::Pen => {
+                                for option in [false, true] {
+                                    if pen_button(ui, hand_drawn == option, option) {
+                                        new_pen = Some(option);
+                                    }
+                                }
+                            }
+                            StyleSection::Fill => {
+                                if color_swatch(ui, fill.is_none(), "Transparent", None) {
+                                    new_fill = Some(None);
+                                }
+                                for (swatch, name) in PALETTE {
+                                    if color_swatch(ui, fill == Some(swatch), name, Some(swatch)) {
+                                        new_fill = Some(Some(swatch));
+                                    }
+                                }
+                            }
+                            StyleSection::Align => {
+                                ui.vertical(|ui| {
+                                    for y in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                        ui.horizontal(|ui| {
+                                            for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                                let option = Align2([x, y]);
+                                                if align_button(ui, align == option, option) {
+                                                    new_align = Some(option);
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            }
+                        });
+                    });
+                });
+            redo_frame_if_resized(ui.ctx(), &area.response);
+        }
 
         if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() {
             return;
@@ -364,10 +378,20 @@ impl DeerawApp {
         }
     }
 
-    /// A style panel button that opens `section` (or closes it if open).
-    pub(super) fn style_toggle(&mut self, section: StyleSection, button: impl FnOnce(bool) -> bool) {
+    /// A button that opens `section` (or closes it if open); while open, its options are
+    /// centered above it.
+    pub(super) fn style_toggle(
+        &mut self,
+        ui: &mut egui::Ui,
+        section: StyleSection,
+        button: impl FnOnce(&mut egui::Ui, bool) -> bool,
+    ) {
         let open = self.style_open == Some(section);
-        if button(open) {
+        let response = ui.scope(|ui| button(ui, open));
+        if open {
+            self.style_anchor = response.response.rect.center();
+        }
+        if response.inner {
             self.style_open = (!open).then_some(section);
         }
     }
@@ -399,6 +423,7 @@ impl DeerawApp {
                 ui.set_visuals(canvas_ui_visuals(self.background));
                 egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        let mut centers = Vec::new();
                         for (tool, icon, hint) in [
                             (Tool::Select, Icon::Select, "Select (V)"),
                             (Tool::Pencil, Icon::Pencil, "Pencil (P)"),
@@ -406,9 +431,22 @@ impl DeerawApp {
                             (Tool::Line, Icon::Line, "Line (L)"),
                             (Tool::Text, Icon::Text, "Text (T)"),
                         ] {
-                            if icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint) {
+                            let button = ui.scope(|ui| icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint));
+                            if button.inner {
                                 self.tool = tool;
                             }
+                            centers.push((tool, button.response.rect.center()));
+                        }
+                        // With Select, the style panel belongs to the tool that draws the selection.
+                        let anchor = match self.tool {
+                            Tool::Select => self
+                                .selected
+                                .iter()
+                                .find_map(|id| self.objects.iter().find(|o| o.id == *id).and_then(|o| drawing_tool(&o.kind))),
+                            tool => Some(tool),
+                        };
+                        if let Some(&(_, center)) = centers.iter().find(|(tool, _)| Some(*tool) == anchor) {
+                            self.tool_anchor = center;
                         }
                         // Only offered while an image is selected (or being cropped).
                         if self.cropping.is_some() || self.selected_image().is_some() {
@@ -425,6 +463,17 @@ impl DeerawApp {
             });
         redo_frame_if_resized(ui.ctx(), &area.response);
         area.response.rect
+    }
+}
+
+/// The tool that draws objects of `kind`; images have none.
+fn drawing_tool(kind: &Kind) -> Option<Tool> {
+    match kind {
+        Kind::Stroke { .. } => Some(Tool::Pencil),
+        Kind::Arrow { head: true, .. } => Some(Tool::Arrow),
+        Kind::Arrow { .. } => Some(Tool::Line),
+        Kind::Text { .. } => Some(Tool::Text),
+        Kind::Image { .. } => None,
     }
 }
 

@@ -121,6 +121,11 @@ pub struct DeerawApp {
     background: Background,
     style: Style,
     style_open: Option<StyleSection>,
+    /// Center of the toolbar button the style panel is centered above (screen, this frame): the
+    /// current tool's, or with Select the one that draws the first selected object.
+    tool_anchor: egui::Pos2,
+    /// Center of the button whose section is open (screen, this frame): its options are centered above it.
+    style_anchor: egui::Pos2,
 }
 
 impl eframe::App for DeerawApp {
