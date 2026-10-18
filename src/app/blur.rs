@@ -4,13 +4,18 @@ use eframe::egui::{self, PointerButton, Pos2, Rect};
 
 use super::{DeerawApp, Drawing, Notice};
 use crate::geometry::{MIN_SIZE, crop_uv, uncropped_rect};
+use crate::mosaic::{load_mosaics, source_block};
 use crate::object::{Kind, Object};
 
 impl DeerawApp {
     /// Drag a box over (part of) an image to blur that part of it. It can start outside: it
     /// blurs the first image the box touches (the topmost, if it touches several at once).
     /// A box that never touches an image just says so.
+    /// Existing blurs can be selected, moved and resized as with Select; clicking elsewhere deselects.
     pub(super) fn blur_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
+        if background.clicked() {
+            self.selected.clear();
+        }
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
             let origin = background.ctx.input(|i| i.pointer.press_origin()).map_or(p, &to_canvas);
@@ -45,7 +50,7 @@ impl DeerawApp {
         let area = crop_uv(uncropped_rect(self.objects[index].rect, uv), rect);
         let id = self.next_id;
         self.next_id += 1;
-        self.objects.insert(index + 1, Object { id, rect, aspect: rect.aspect_ratio(), kind: Kind::Blur { image, area } });
+        self.objects.insert(index + 1, Object { id, rect, aspect: rect.aspect_ratio(), kind: Kind::Blur { image, area, strength: self.style.blur } });
         self.selected = vec![id];
     }
 
@@ -53,7 +58,7 @@ impl DeerawApp {
     /// gone stay where they are.
     pub(super) fn follow_blurs(&mut self) {
         for i in 0..self.objects.len() {
-            let Kind::Blur { image, area } = self.objects[i].kind else { continue };
+            let Kind::Blur { image, area, .. } = self.objects[i].kind else { continue };
             let Some(full) = self.full_image_rect(image) else { continue };
             self.objects[i].rect = Rect::from_min_max(full.lerp_inside(area.min.to_vec2()), full.lerp_inside(area.max.to_vec2()));
         }
@@ -71,6 +76,25 @@ impl DeerawApp {
             let rect = self.objects[i].rect;
             if let Kind::Blur { area, .. } = &mut self.objects[i].kind {
                 *area = crop_uv(full, rect);
+            }
+        }
+    }
+
+    /// Rebuilds the mosaics of images with blurs whose size changed, so blocks stay
+    /// `mosaic::BLOCK` canvas pixels however the image is scaled. Not while a button is held
+    /// (mid-resize the old blocks just scale along), so it runs once per resize, before that
+    /// step is recorded for undo.
+    pub(super) fn update_mosaics(&mut self, ctx: &egui::Context) {
+        if ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let blurred: Vec<u64> = self.objects.iter().filter_map(|o| o.blurred_image()).collect();
+        for obj in self.objects.iter_mut().filter(|o| blurred.contains(&o.id)) {
+            let Kind::Image { texture, uv, pixels, mosaics } = &mut obj.kind else { continue };
+            let scale = obj.rect.width() / (uv.width() * texture.size()[0] as f32);
+            let block = source_block(scale);
+            if block != mosaics.block {
+                *mosaics = load_mosaics(ctx, &format!("mosaic-{}", obj.id), &pixels.0, block);
             }
         }
     }
@@ -132,6 +156,11 @@ mod tests {
         // A drag from outside picks the image once it's reached.
         assert_eq!(image_touching(&app.objects, rect(0.0, 0.0, 90.0, 90.0)), None);
         assert_eq!(image_touching(&app.objects, rect(0.0, 0.0, 120.0, 120.0)), Some(image));
+
+        // The image is now twice its size: its blocks get half as many source pixels.
+        app.update_mosaics(&ctx);
+        let Kind::Image { mosaics, .. } = &app.objects[0].kind else { panic!() };
+        assert_eq!(mosaics.block, 6);
 
         // Deleting the image deletes its blur.
         app.selected = vec![image];

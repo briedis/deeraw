@@ -5,9 +5,9 @@ use eframe::egui::{self, Align2, Color32, CursorIcon, Pos2, Rect, Sense, Vec2};
 use super::{DeerawApp, Tool};
 use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
-use crate::object::{ArrowHeads, Head, Kind, Shape};
+use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, arrow_head_button, align_name, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
+use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -74,7 +74,7 @@ impl DeerawApp {
                             }
                         }
                     }
-                    Kind::Blur { image, .. } => info += &format!("\non image #{image}"),
+                    Kind::Blur { image, strength, .. } => info += &format!("\n{}, on image #{image}", strength.name()),
                 }
                 ui.weak(info);
             }
@@ -167,6 +167,10 @@ impl DeerawApp {
     pub(super) fn style_panel(&mut self, ui: &egui::Ui, toolbar: Rect) {
         let targets: Vec<usize> = match self.tool {
             Tool::Select => (0..self.objects.len()).filter(|&i| self.selected.contains(&self.objects[i].id)).collect(),
+            // The Blur tool also edits the selected blurs.
+            Tool::Blur => (0..self.objects.len())
+                .filter(|&i| self.selected.contains(&self.objects[i].id) && self.objects[i].blur_strength_mut().is_some())
+                .collect(),
             // While typing with the Text tool, its style applies to that text too.
             _ => (0..self.objects.len()).filter(|&i| self.editing == Some(self.objects[i].id)).collect(),
         };
@@ -231,6 +235,15 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].shape_mut().map(|s| *s))
             .unwrap_or(self.style.shape);
+        let show_blur = match self.tool {
+            Tool::Blur => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].blur_strength_mut().is_some()),
+            _ => false,
+        };
+        let blur = targets
+            .iter()
+            .find_map(|&i| self.objects[i].blur_strength_mut().map(|s| *s))
+            .unwrap_or(self.style.blur);
         let show_fill = match self.tool {
             Tool::Text | Tool::Shape => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].fill_mut().is_some()),
@@ -258,9 +271,10 @@ impl DeerawApp {
         let mut new_pen = None;
         let mut new_heads = None;
         let mut new_shape = None;
+        let mut new_blur = None;
         // The stack above the toolbar grows upwards: this panel, then the open section's options.
         let mut top = toolbar.top();
-        if show_color {
+        if show_color || show_blur {
             let area = egui::Area::new(egui::Id::unique("style"))
                 .pivot(Align2::CENTER_BOTTOM)
                 .fixed_pos(Pos2::new(self.tool_anchor.x, toolbar.top() - STACK_GAP))
@@ -272,8 +286,18 @@ impl DeerawApp {
                             if show_shape {
                                 self.style_toggle(ui, StyleSection::Shape, |ui, open| icon_button(ui, open, shape_icon(shape), 14.0, shape.name()));
                             }
-                            let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
-                            self.style_toggle(ui, StyleSection::Color, |ui, open| color_swatch(ui, open, name, Some(color)));
+                            // Just three options: shown in the bar, not as a section.
+                            if show_blur {
+                                for option in BlurStrength::ALL {
+                                    if blur_button(ui, blur == option, option) {
+                                        new_blur = Some(option);
+                                    }
+                                }
+                            }
+                            if show_color {
+                                let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
+                                self.style_toggle(ui, StyleSection::Color, |ui, open| color_swatch(ui, open, name, Some(color)));
+                            }
                             for &(kind, size) in &sizes {
                                 self.style_toggle(ui, StyleSection::Size(kind), |ui, open| match kind {
                                     SizeKind::Line => icon_button(ui, open, Icon::StrokeWidth, 14.0, &format!("Line width: {size:.0}px")),
@@ -389,7 +413,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() && new_blur.is_none() {
             return;
         }
         self.style_open = None;
@@ -430,6 +454,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(s) = self.objects[i].shape_mut() {
                     *s = shape;
+                }
+            }
+        }
+        if let Some(strength) = new_blur {
+            self.style.blur = strength;
+            for &i in &targets {
+                if let Some(s) = self.objects[i].blur_strength_mut() {
+                    *s = strength;
                 }
             }
         }

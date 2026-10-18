@@ -5,8 +5,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
 
 use crate::geometry::{crop_uv, diamond, uncropped_rect};
-use crate::mosaic::BLOCK;
-use crate::object::{ArrowHeads, Head, Kind, Object, Shape, TextFrame};
+use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Object, Shape, TextFrame};
 use crate::stroke::paint_hand_drawn;
 
 /// Length of an arrow's head, in canvas pixels: base plus this much per pixel of line width.
@@ -21,9 +20,9 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
         Kind::Image { texture, uv, .. } => {
             painter.image(texture.id(), rect, *uv, Color32::WHITE);
         }
-        Kind::Blur { image, .. } => {
+        Kind::Blur { image, strength, .. } => {
             if let Some(image) = objects.iter().find(|o| o.id == *image) {
-                paint_mosaic(painter, image, obj.rect, to_screen_pos);
+                paint_mosaic(painter, image, obj.rect, *strength, to_screen_pos);
             }
         }
         Kind::Stroke { points, pressures, color, width, hand_drawn } => {
@@ -57,17 +56,19 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
     }
 }
 
-/// Paints the part `area` (canvas pixels) of `image` pixelated; only where it overlaps the
-/// image's kept area.
-pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2) {
-    let Kind::Image { texture, uv, mosaic } = &image.kind else { return };
+/// Paints the part `area` (canvas pixels) of `image` pixelated at `strength`; only where it
+/// overlaps the image's kept area.
+pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, strength: BlurStrength, to_screen_pos: impl Fn(Pos2) -> Pos2) {
+    let Kind::Image { texture, uv, mosaics, .. } = &image.kind else { return };
+    let mosaic = &mosaics.textures[strength.index()];
     let visible = area.intersect(image.rect);
     if !visible.is_positive() {
         return;
     }
     // The mosaic's blocks at the right and bottom edges may stick out of the image.
     let ([w, h], [mw, mh]) = (texture.size(), mosaic.size());
-    let covered = Vec2::new(w as f32 / (mw * BLOCK) as f32, h as f32 / (mh * BLOCK) as f32);
+    let block = mosaics.block * strength.blocks();
+    let covered = Vec2::new(w as f32 / (mw * block) as f32, h as f32 / (mh * block) as f32);
     let image_uv = crop_uv(uncropped_rect(image.rect, *uv), visible);
     let mosaic_uv = Rect::from_min_max((image_uv.min.to_vec2() * covered).to_pos2(), (image_uv.max.to_vec2() * covered).to_pos2());
     let screen = Rect::from_min_max(to_screen_pos(visible.min), to_screen_pos(visible.max));

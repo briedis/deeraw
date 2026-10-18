@@ -2,7 +2,7 @@
 
 use eframe::egui::{Align2, Color32, CornerRadius, Stroke, Visuals};
 
-use crate::object::{ArrowHeads, Shape};
+use crate::object::{ArrowHeads, BlurStrength, Shape};
 
 /// Colors offered by the style panel; the first is the default.
 pub const PALETTE: [(Color32, &str); 6] = [
@@ -59,6 +59,8 @@ pub struct Style {
     pub arrow_heads: ArrowHeads,
     /// For the Shape tool.
     pub shape: Shape,
+    /// For blurs.
+    pub blur: BlurStrength,
     /// For text boxes.
     pub align: Align2,
     /// For text boxes and shapes; `None` is transparent (shapes are outline only).
@@ -67,7 +69,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), align: Align2::LEFT_TOP, fill: None }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None }
     }
 }
 

@@ -1,6 +1,8 @@
 //! Objects on the canvas: images, strokes, arrows/lines, shapes and text.
 
-use eframe::egui::{Align2, Color32, Pos2, Rect, TextureHandle, Vec2};
+use std::sync::Arc;
+
+use eframe::egui::{Align2, Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
 
 use crate::style::SizeKind;
 
@@ -18,8 +20,8 @@ pub struct Object {
 #[derive(Clone, PartialEq)]
 pub enum Kind {
     /// `uv` is the part of the texture that's kept (0..1); cropping only changes `uv` and `rect`.
-    /// `mosaic` is the texture pixelated (see `mosaic`), for blurs on it.
-    Image { texture: TextureHandle, uv: Rect, mosaic: TextureHandle },
+    /// `pixels` are the texture's, kept to rebuild `mosaics` (for blurs on it) when it's resized.
+    Image { texture: TextureHandle, uv: Rect, pixels: Pixels, mosaics: Mosaics },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     /// `pressures` (0..1, one per point, from drawing speed) are always recorded, but only
     /// used when `hand_drawn`: then the stroke is smoothed and its width varies.
@@ -37,7 +39,62 @@ pub enum Kind {
     /// Pixelates the part `area` (0..1 of the whole, uncropped texture) of image `image`; `rect`
     /// is derived from it, so it moves, resizes and crops with the image. Only the part inside
     /// the image's kept area shows. Kept right above its image.
-    Blur { image: u64, area: Rect },
+    Blur { image: u64, area: Rect, strength: BlurStrength },
+}
+
+/// How coarse a blur's pixelation is.
+#[derive(Clone, Copy, Default, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum BlurStrength {
+    #[default]
+    Light,
+    Medium,
+    Strong,
+}
+
+impl BlurStrength {
+    pub const ALL: [BlurStrength; 3] = [BlurStrength::Light, BlurStrength::Medium, BlurStrength::Strong];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BlurStrength::Light => "light",
+            BlurStrength::Medium => "medium",
+            BlurStrength::Strong => "strong",
+        }
+    }
+
+    /// Its block size in lightest blocks (`mosaic::BLOCK` source pixels each).
+    pub fn blocks(self) -> usize {
+        match self {
+            BlurStrength::Light => 1,
+            BlurStrength::Medium => 2,
+            BlurStrength::Strong => 4,
+        }
+    }
+
+    /// Index into an image's `mosaics`.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+}
+
+/// An image's pixels. Compared by identity, which is cheap (undo compares every frame) and
+/// enough: an image's pixels never change.
+#[derive(Clone)]
+pub struct Pixels(pub Arc<ColorImage>);
+
+impl PartialEq for Pixels {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// An image pixelated at each `BlurStrength` (`BlurStrength::ALL` order), for blurs on it.
+#[derive(Clone, PartialEq)]
+pub struct Mosaics {
+    /// Light blocks' side, in source pixels; chosen so they're `mosaic::BLOCK` canvas pixels
+    /// at the image's size.
+    pub block: usize,
+    pub textures: [TextureHandle; 3],
 }
 
 /// What the Shape tool draws.
@@ -202,6 +259,14 @@ impl Object {
     pub fn align_mut(&mut self) -> Option<&mut Align2> {
         match &mut self.kind {
             Kind::Text { frame: Some(frame), .. } => Some(&mut frame.align),
+            _ => None,
+        }
+    }
+
+    /// Strength, for blurs only.
+    pub fn blur_strength_mut(&mut self) -> Option<&mut BlurStrength> {
+        match &mut self.kind {
+            Kind::Blur { strength, .. } => Some(strength),
             _ => None,
         }
     }

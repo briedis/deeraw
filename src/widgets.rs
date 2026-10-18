@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
 
-use crate::object::{ArrowHeads, Head};
+use crate::object::{ArrowHeads, BlurStrength, Head};
 use crate::paint::{paint_arrow, paint_checkerboard};
 use crate::stroke::paint_hand_drawn;
 use crate::style::{FONT_SIZES, SizeKind};
@@ -100,6 +100,33 @@ pub fn arrow_head_button(ui: &mut egui::Ui, selected: bool, head: Head, start: b
     let heads = if start { ArrowHeads { start: head, end: Head::None } } else { ArrowHeads { start: Head::None, end: head } };
     // Sized to look like a 2px arrow at 100%.
     paint_arrow(ui.painter(), r.left_center(), r.right_center(), Stroke::new(1.5, color), 0.45, heads);
+    response.clicked()
+}
+
+/// A selectable blur strength button: a checkered square, 4×4 (light), 3×3 or 2×2 (strong).
+pub fn blur_button(ui: &mut egui::Ui, selected: bool, strength: BlurStrength) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
+    let response = ui.add(button).on_hover_text(format!("Blur: {}", strength.name()));
+    let cells = match strength {
+        BlurStrength::Light => 4,
+        BlurStrength::Medium => 3,
+        BlurStrength::Strong => 2,
+    };
+    // Whole physical pixels per cell, on the pixel grid: fractional cells blur together.
+    let ppp = ui.ctx().pixels_per_point();
+    let cell = (16.0 * ppp / cells as f32).floor() / ppp;
+    let size = Vec2::splat(cell * cells as f32);
+    let min = ((response.rect.center() - size / 2.0).to_vec2() * ppp).round().to_pos2() / ppp;
+    let square = Rect::from_min_size(min, size);
+    // Like the icons: solid cells in the icon color (white on the blue selected button), the
+    // others left empty.
+    let color = if selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+    for y in 0..cells {
+        for x in (0..cells).filter(|x| (x + y) % 2 == 0) {
+            let min = square.min + Vec2::new(x as f32, y as f32) * cell;
+            ui.painter().rect_filled(Rect::from_min_size(min, Vec2::splat(cell)), 0.0, color);
+        }
+    }
     response.clicked()
 }
 

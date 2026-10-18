@@ -96,15 +96,21 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    - Blur (B): drag a box over part of an image to pixelate it, for hiding things in screenshots
      (`Kind::Blur`, `app/blur.rs`). The drag may start outside: the box attaches to the first image it
      touches (topmost if several) and is cut to that image's edges; one that never touches an image
-     shows a notice. Pixelated, not gaussian, so it's safe: on paste each image also gets a `mosaic`
-     texture (`mosaic.rs`: every 12×12 block averaged into one pixel, nearest sampling), and a blur paints
-     that over its area (`paint_mosaic`), so the original pixels are never drawn there, on screen or in
-     exports. Blocks are aligned to the image's pixels. A blur stores its `area` relative to the whole
+     shows a notice. Pixelated, not gaussian, so it's safe: on paste each image also gets `mosaics`
+     textures (`mosaic.rs`: every block averaged into one pixel, nearest sampling), and a blur paints
+     one over its area (`paint_mosaic`), so the original pixels are never drawn there, on screen or in
+     exports. Three strengths (`BlurStrength`, three checkered buttons right in the style panel bar, 4×4, 3×3
+     and 2×2, also for selected blurs): light (12px blocks, the default), medium (24px) and strong (48px); the stronger mosaics are
+     built from the light one. Block sizes are canvas pixels, not the image's: images keep their
+     `pixels` (`Pixels`, compared by identity), and `update_mosaics` rebuilds a blurred image's mosaics
+     when its scale changes (once the button is released; mid-resize the old blocks scale along), so a
+     scaled-up image stays just as blurry. Blocks are aligned to the image's pixels. A blur stores its `area` relative to the whole
      uncropped image, and `follow_blurs` re-derives its `rect` every frame, so it moves, resizes and crops
      with the image; moving/resizing the blur itself updates `area` (`update_blur_areas`). It's inserted
      right above its image, so annotations stay on top. Deleting or cutting an image takes its blurs
-     along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely; no style options yet
-     (fixed block size). While cropping, the image shows unblurred (on screen only).
+     along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely. Picking a blur with
+     Select (click or drag) switches to the Blur tool, which also selects, moves and resizes blurs (only
+     blurs; clicking elsewhere deselects) and restyles the selected ones. While cropping, the image shows unblurred (on screen only).
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
      lines break at the box width and the text is aligned inside it (9 alignments, picked in the
@@ -140,6 +146,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
    also get an alignment button (3×3 grid); text boxes, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
+   The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
    selected object that has that setting (undoable) and also becomes the default. A mixed
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width; an open head is one path so its point stays sharp when thick, and the line stops inside a solid head so its square end doesn't show.

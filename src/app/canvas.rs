@@ -126,6 +126,8 @@ impl DeerawApp {
             paint_checkerboard(&painter, canvas_rect, 8.0, 242);
         }
         let selecting = self.tool == Tool::Select;
+        // The Blur tool also selects, moves and resizes blurs (and only those).
+        let blurring = self.tool == Tool::Blur;
         let ctrl = ui.input(|i| i.modifiers.command);
         // Dragging any selected object moves all of them; applied after the loop.
         let mut move_by = Vec2::ZERO;
@@ -165,7 +167,8 @@ impl DeerawApp {
                 }
                 _ => true,
             };
-            if selecting && !editing && hit {
+            let is_blur = matches!(obj.kind, Kind::Blur { .. });
+            if (selecting || blurring && is_blur) && !editing && hit {
                 let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, Sense::click_and_drag());
                 if response.clicked() {
                     clicked = Some(obj.id);
@@ -177,6 +180,10 @@ impl DeerawApp {
                         self.selected.clear();
                     }
                     self.selected.push(obj.id);
+                }
+                // Picking a blur with Select switches to the Blur tool, which then edits it.
+                if is_blur && selecting && (response.clicked() || response.drag_started_by(PointerButton::Primary)) {
+                    self.tool = Tool::Blur;
                 }
                 if response.double_clicked() {
                     match obj.kind {
@@ -208,6 +215,7 @@ impl DeerawApp {
         }
         self.follow_blurs();
         self.follow_bindings();
+        self.update_mosaics(ui.ctx());
         for obj in &self.objects {
             if self.editing != Some(obj.id) {
                 paint_object(&painter, obj, &self.objects, to_screen(obj.rect), to_screen_pos, scale);
@@ -252,7 +260,7 @@ impl DeerawApp {
                 let mut area = Rect::from_two_pos(*a, *b);
                 if let Some(image) = self.objects.iter().find(|o| Some(o.id) == *image) {
                     area = area.intersect(image.rect);
-                    paint_mosaic(&painter, image, area, to_screen_pos);
+                    paint_mosaic(&painter, image, area, self.style.blur, to_screen_pos);
                 }
                 painter.rect_stroke(to_screen(area), 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
             }
@@ -261,6 +269,14 @@ impl DeerawApp {
 
         if self.cropping.is_some() {
             self.crop_ui(ui, to_screen, to_canvas, scale);
+        } else if blurring {
+            let objects = &self.objects;
+            if self.selected.iter().all(|id| objects.iter().any(|o| o.id == *id && matches!(o.kind, Kind::Blur { .. }))) {
+                self.selection_handles(ui, to_screen, to_screen_pos, to_canvas, scale);
+                if self.resize_drag.is_some() {
+                    self.update_blur_areas();
+                }
+            }
         } else if selecting {
             if self.editing.is_none() {
                 self.connect_ui(ui, to_canvas, to_screen_pos);
@@ -294,6 +310,7 @@ impl DeerawApp {
             // Resizing (after painting) moved objects this frame; their arrows and blurs go in the same undo step.
             self.follow_blurs();
             self.follow_bindings();
+            self.update_mosaics(ui.ctx());
             self.history.record(&self.objects);
         }
     }
