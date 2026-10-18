@@ -50,11 +50,11 @@ mod tests {
     use eframe::egui::{Color32, Pos2, Rect};
 
     use super::*;
-    use crate::object::Kind;
+    use crate::object::{ArrowHeads, Kind};
 
     fn arrow(id: u64) -> Object {
         let (start, end) = (Pos2::ZERO, Pos2::new(10.0, 0.0));
-        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0, head: true, bindings: [None; 2] } }
+        Object { id, rect: Rect::from_two_pos(start, end), aspect: 1.0, kind: Kind::Arrow { start, end, color: Color32::BLACK, width: 3.0, heads: Some(ArrowHeads::default()), bindings: [None; 2] } }
     }
 
     #[test]

@@ -5,9 +5,9 @@ use eframe::egui::{self, Align2, CursorIcon, Pos2, Rect, Sense, Vec2};
 use super::{DeerawApp, Tool};
 use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
-use crate::object::Kind;
+use crate::object::{ArrowHeads, Head, Kind};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, align_name, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
+use crate::widgets::{Icon, align_button, arrow_head_button, align_name, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -60,8 +60,11 @@ impl DeerawApp {
                             info += &format!(", box {}", align_name(frame.align));
                         }
                     }
-                    Kind::Arrow { width, bindings, .. } => {
+                    Kind::Arrow { width, heads, bindings, .. } => {
                         info += &format!("\nwidth {width:.0}px");
+                        if let Some(heads) = heads {
+                            info += &format!(", heads {} / {}", heads.start.name(), heads.end.name());
+                        }
                         for (end, binding) in ["start", "end"].iter().zip(bindings) {
                             if let Some(b) = binding {
                                 info += &format!(", {end} on #{} {:?}", b.id, b.side);
@@ -196,6 +199,15 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].hand_drawn_mut().map(|h| *h))
             .unwrap_or(self.style.hand_drawn);
+        let show_heads = match self.tool {
+            Tool::Arrow => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].arrow_heads_mut().is_some()),
+            _ => false,
+        };
+        let heads = targets
+            .iter()
+            .find_map(|&i| self.objects[i].arrow_heads_mut().map(|h| *h))
+            .unwrap_or(self.style.arrow_heads);
         let show_align = match self.tool {
             Tool::Text => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].align_mut().is_some()),
@@ -214,6 +226,7 @@ impl DeerawApp {
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
             Some(StyleSection::Align | StyleSection::Fill) if !show_align => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
+            Some(StyleSection::StartHead | StyleSection::EndHead) if !show_heads => self.style_open = None,
             _ => {}
         }
 
@@ -222,6 +235,7 @@ impl DeerawApp {
         let mut new_align = None;
         let mut new_fill = None;
         let mut new_pen = None;
+        let mut new_heads = None;
         // The stack above the toolbar grows upwards: this panel, then the open section's options.
         let mut top = toolbar.top();
         if show_color {
@@ -243,6 +257,14 @@ impl DeerawApp {
                             }
                             if show_pen {
                                 self.style_toggle(ui, StyleSection::Pen, |ui, open| pen_button(ui, open, hand_drawn));
+                            }
+                            if show_heads {
+                                self.style_toggle(ui, StyleSection::StartHead, |ui, open| {
+                                    arrow_head_button(ui, open, heads.start, true, &format!("Start: {}", heads.start.name()))
+                                });
+                                self.style_toggle(ui, StyleSection::EndHead, |ui, open| {
+                                    arrow_head_button(ui, open, heads.end, false, &format!("End: {}", heads.end.name()))
+                                });
                             }
                             if show_align {
                                 self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, align));
@@ -301,6 +323,15 @@ impl DeerawApp {
                                     }
                                 }
                             }
+                            StyleSection::StartHead | StyleSection::EndHead => {
+                                let start = section == StyleSection::StartHead;
+                                let current = if start { heads.start } else { heads.end };
+                                for head in Head::ALL {
+                                    if arrow_head_button(ui, current == head, head, start, head.name()) {
+                                        new_heads = Some(if start { ArrowHeads { start: head, ..heads } } else { ArrowHeads { end: head, ..heads } });
+                                    }
+                                }
+                            }
                             StyleSection::Fill => {
                                 if color_swatch(ui, fill.is_none(), "Transparent", None) {
                                     new_fill = Some(None);
@@ -331,7 +362,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() {
             return;
         }
         self.style_open = None;
@@ -356,6 +387,14 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(h) = self.objects[i].hand_drawn_mut() {
                     *h = pen;
+                }
+            }
+        }
+        if let Some(heads) = new_heads {
+            self.style.arrow_heads = heads;
+            for &i in &targets {
+                if let Some(h) = self.objects[i].arrow_heads_mut() {
+                    *h = heads;
                 }
             }
         }
@@ -471,7 +510,7 @@ impl DeerawApp {
 fn drawing_tool(kind: &Kind) -> Option<Tool> {
     match kind {
         Kind::Stroke { .. } => Some(Tool::Pencil),
-        Kind::Arrow { head: true, .. } => Some(Tool::Arrow),
+        Kind::Arrow { heads: Some(_), .. } => Some(Tool::Arrow),
         Kind::Arrow { .. } => Some(Tool::Line),
         Kind::Text { .. } => Some(Tool::Text),
         Kind::Image { .. } => None,

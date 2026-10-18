@@ -2,7 +2,8 @@
 
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
 
-use crate::paint::paint_checkerboard;
+use crate::object::{ArrowHeads, Head};
+use crate::paint::{paint_arrow, paint_checkerboard};
 use crate::stroke::paint_hand_drawn;
 use crate::style::{FONT_SIZES, SizeKind};
 
@@ -87,6 +88,19 @@ pub fn pen_button(ui: &mut egui::Ui, selected: bool, hand_drawn: bool) -> bool {
     }
     let name = if hand_drawn { "Hand-drawn: smoothed, faster strokes are thinner" } else { "Plain line" };
     response.on_hover_text(name).clicked()
+}
+
+/// A selectable button showing a short arrow with `head` at its `start` (pointing left) or
+/// its end (pointing right).
+pub fn arrow_head_button(ui: &mut egui::Ui, selected: bool, head: Head, start: bool, hint: &str) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::new(36.0, 22.0));
+    let response = ui.add(button).on_hover_text(hint);
+    let r = response.rect.shrink2(Vec2::new(7.0, 0.0));
+    let color = if selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+    let heads = if start { ArrowHeads { start: head, end: Head::None } } else { ArrowHeads { start: Head::None, end: head } };
+    // Sized to look like a 2px arrow at 100%.
+    paint_arrow(ui.painter(), r.left_center(), r.right_center(), Stroke::new(1.5, color), 0.45, heads);
+    response.clicked()
 }
 
 /// E.g. "top left", "center".

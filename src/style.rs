@@ -2,6 +2,8 @@
 
 use eframe::egui::{Align2, Color32, CornerRadius, Stroke, Visuals};
 
+use crate::object::ArrowHeads;
+
 /// Colors offered by the style panel; the first is the default.
 pub const PALETTE: [(Color32, &str); 6] = [
     (Color32::BLACK, "Black"),
@@ -25,6 +27,10 @@ pub enum StyleSection {
     Size(SizeKind),
     /// Plain or hand-drawn pencil strokes.
     Pen,
+    /// What an arrow has at its start.
+    StartHead,
+    /// What an arrow has at its end.
+    EndHead,
     Align,
     Fill,
 }
@@ -44,6 +50,8 @@ pub struct Style {
     pub font_px: f32,
     /// For pencil strokes.
     pub hand_drawn: bool,
+    /// For arrows.
+    pub arrow_heads: ArrowHeads,
     /// For text boxes.
     pub align: Align2,
     pub fill: Option<Color32>,
@@ -51,7 +59,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, align: Align2::LEFT_TOP, fill: None }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), align: Align2::LEFT_TOP, fill: None }
     }
 }
 

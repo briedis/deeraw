@@ -95,7 +95,7 @@ mod tests {
     use eframe::egui::{Color32, Vec2};
 
     use super::*;
-    use crate::object::Object;
+    use crate::object::{ArrowHeads, Object};
 
     fn app_with_arrow_on_text() -> DeerawApp {
         let mut app = DeerawApp::default();
@@ -104,7 +104,7 @@ mod tests {
         let target = app.add(rect, text);
         let end = anchor(rect, Side::Left);
         let binding = Binding { id: target, side: Side::Left };
-        let kind = Kind::Arrow { start: Pos2::ZERO, end, color: Color32::BLACK, width: 2.0, head: true, bindings: [None, Some(binding)] };
+        let kind = Kind::Arrow { start: Pos2::ZERO, end, color: Color32::BLACK, width: 2.0, heads: Some(ArrowHeads::default()), bindings: [None, Some(binding)] };
         app.add(Rect::from_two_pos(Pos2::ZERO, end), kind);
         app
     }

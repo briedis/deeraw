@@ -6,7 +6,7 @@ use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SE
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
 use crate::geometry::{MIN_SIZE, distance_to_segment, normalize, pan_for_zoom};
-use crate::object::{Kind, TextFrame};
+use crate::object::{ArrowHeads, Kind, TextFrame};
 use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_object, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, speed_pressures};
 use crate::style::{Background, Style};
@@ -216,8 +216,8 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end, bindings)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
-                let head = self.tool == Tool::Arrow;
-                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, head);
+                let heads = if self.tool == Tool::Arrow { self.style.arrow_heads } else { ArrowHeads::NONE };
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads);
                 self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), bindings, to_screen_pos);
             }
             Some(Drawing::TextBox(a, b)) => {
@@ -475,9 +475,9 @@ impl DeerawApp {
                 self.add(rect, Kind::Stroke { points, pressures, color, width, hand_drawn });
             }
             Some(Drawing::Arrow(start, end, bindings)) if start.distance(end) >= MIN_SIZE => {
-                let Style { color, line_width: width, .. } = self.style;
-                let head = self.tool == Tool::Arrow;
-                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, head, bindings });
+                let Style { color, line_width: width, arrow_heads, .. } = self.style;
+                let heads = (self.tool == Tool::Arrow).then_some(arrow_heads);
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings });
             }
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);

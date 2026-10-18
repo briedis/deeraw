@@ -2,14 +2,16 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2, emath::Rot2};
+use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2, emath::Rot2, epaint::PathShape};
 
-use crate::object::{Kind, Object, TextFrame};
+use crate::object::{ArrowHeads, Head, Kind, Object, TextFrame};
 use crate::stroke::paint_hand_drawn;
 
-/// Length of an arrow's head lines, in canvas pixels: base plus this much per pixel of line width.
+/// Length of an arrow's head, in canvas pixels: base plus this much per pixel of line width.
 const ARROW_HEAD: f32 = 12.0;
 const ARROW_HEAD_PER_WIDTH: f32 = 2.0;
+/// Angle between an arrow's line and each side of its head, in radians.
+const ARROW_HEAD_SPREAD: f32 = 0.45;
 
 pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
     match &obj.kind {
@@ -26,9 +28,9 @@ pub fn paint_object(painter: &Painter, obj: &Object, rect: Rect, to_screen_pos: 
                 painter.line(points, Stroke::new(width * scale, *color));
             }
         }
-        Kind::Arrow { start, end, color, width, head, .. } => {
+        Kind::Arrow { start, end, color, width, heads, .. } => {
             let stroke = Stroke::new(width * scale, *color);
-            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, *head);
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads.unwrap_or(ArrowHeads::NONE));
         }
         Kind::Text { text, font_px, color, frame } => {
             let frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
@@ -60,20 +62,42 @@ pub fn text_layout_job(text: &str, font: FontId, color: Color32, frame: Option<T
     job
 }
 
-/// Draws a line from `start` to `end` (screen points), with a head at `end` if `head`; the head
-/// grows with the stroke width. `scale` is screen points per canvas pixel.
-pub fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, head: bool) {
-    painter.line_segment([start, end], stroke);
+/// Draws a line from `start` to `end` (screen points) with `heads`; they grow with the stroke
+/// width. `scale` is screen points per canvas pixel.
+pub fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, heads: ArrowHeads) {
     let along = end - start;
     let length = along.length();
-    if !head || length < 1.0 {
+    if length < 1.0 {
+        painter.line_segment([start, end], stroke);
         return;
     }
-    let head_length = ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width;
-    let back = -along / length * head_length.min(length / 2.0);
-    let spread = Rot2::from_angle(0.45);
-    painter.line_segment([end, end + spread * back], stroke);
-    painter.line_segment([end, end + spread.inverse() * back], stroke);
+    let ends = if heads.start != Head::None && heads.end != Head::None { 3.0 } else { 2.0 };
+    let head_length = (ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width).min(length / ends);
+    let dir = along / length;
+    let line_start = paint_head(painter, start, -dir, head_length, stroke, heads.start);
+    let line_end = paint_head(painter, end, dir, head_length, stroke, heads.end);
+    painter.line_segment([line_start, line_end], stroke);
+}
+
+/// Draws `head` with its tip at `tip`, pointing along `dir` (unit); returns where the line
+/// should end so its square end stays hidden under the head.
+fn paint_head(painter: &Painter, tip: Pos2, dir: Vec2, length: f32, stroke: Stroke, head: Head) -> Pos2 {
+    let back = -dir * length;
+    let spread = Rot2::from_angle(ARROW_HEAD_SPREAD);
+    let sides = [tip + spread * back, tip + spread.inverse() * back];
+    match head {
+        Head::None => tip,
+        Head::Open => {
+            // One path, so the sides are joined in a point however thick they are.
+            painter.add(PathShape::line(vec![sides[0], tip, sides[1]], stroke));
+            tip
+        }
+        Head::Solid => {
+            painter.add(PathShape::convex_polygon(vec![sides[0], tip, sides[1]], stroke.color, Stroke::NONE));
+            // Halfway into the head, which is still wider than the line there.
+            tip + back * ARROW_HEAD_SPREAD.cos() / 2.0
+        }
+    }
 }
 
 /// Screen-aligned checkerboard standing in for a transparent background.

@@ -83,7 +83,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      detaches it; moving an arrow without its object detaches it (`detach_selected`); Ctrl+D copies
      re-attach to copied objects or detach. Deleting the object leaves the arrow (its binding dangles
      harmlessly; ids are never reused, and undo re-attaches it).
-   - Line: like Arrow but without a head (same object kind, `head: false`); stays in Line mode.
+   - Line: like Arrow but without a head (same object kind, `heads: None`); stays in Line mode.
    - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
      handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
      lines break at the box width and the text is aligned inside it (9 alignments, picked in the
@@ -115,12 +115,12 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line or Text is active,
    or while a stroke, arrow, line or text is selected. It shows the current color and size; clicking
    either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,
-   red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
+   red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Arrow heads (arrows, not lines; `ArrowHeads`/`Head` in `object.rs`): a start button (pointing left) and an end button (pointing right), each previewing that end and opening its options: none, open lines or solid triangle (default: none at the start, solid at the end). Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
    also get an alignment button (3×3 grid) and a background button (transparent or a palette color).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
    selected object that has that setting (undoable) and also becomes the default. A mixed
-   selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width.
+   selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width; an open head is one path so its point stays sharp when thick, and the line stops inside a solid head so its square end doesn't show.
 
 9. **Menu bar** — top of the window (`menu_bar`).
    - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
