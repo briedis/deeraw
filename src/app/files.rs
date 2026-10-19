@@ -69,8 +69,10 @@ impl DeerawApp {
             .unwrap_or(MIN_ZOOM_LEVEL);
         let window = window_at(self.zoom_level).max(FIT_MIN_WINDOW).round();
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(window));
-        let canvas = window - chrome;
-        self.pan = ((canvas - size * self.zoom() / ppp) / 2.0).round();
+        // Until the window has that size, the resize factor in `zoom()` shrinks it to the current
+        // canvas panel, and the window resize keeps it centered.
+        self.fit_size = Some(window - chrome);
+        self.pan = ((canvas_rect.size() - size * self.zoom() / ppp) / 2.0).round();
         true
     }
 

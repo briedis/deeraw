@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
-use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool};
+use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
 use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom};
@@ -21,8 +21,24 @@ impl DeerawApp {
         let ppp = ui.ctx().pixels_per_point();
         let canvas_rect = ui.max_rect();
         // Showing, hiding or resizing the layers panel moves the canvas panel; the drawing stays put.
-        if let Some(previous) = self.canvas_min.replace(canvas_rect.min) {
-            self.pan -= canvas_rect.min - previous;
+        // Resizing the window scales the drawing along, keeping what's at the canvas center there.
+        // (Not while minimized, when the panel has no size.)
+        if let (true, Some(previous)) = (canvas_rect.is_positive(), self.canvas_rect) {
+            self.pan -= canvas_rect.min - previous.min;
+            let window = ui.ctx().content_rect().size();
+            if self.window_size == Some(window) {
+                self.fit_size = self.fit_size.map(|fit| fit * canvas_rect.size() / previous.size());
+            } else {
+                self.fit_size.get_or_insert(previous.size());
+                let old_scale = self.zoom() / ppp;
+                self.canvas_rect = Some(canvas_rect);
+                let center = previous.center() - canvas_rect.min;
+                self.pan = pan_for_zoom(self.pan, center, old_scale, self.zoom() / ppp) + (canvas_rect.center() - previous.center());
+            }
+        }
+        if canvas_rect.is_positive() {
+            self.canvas_rect = Some(canvas_rect);
+            self.window_size = Some(ui.ctx().content_rect().size());
         }
         self.navigate(ui, canvas_rect, ppp);
 
@@ -377,21 +393,26 @@ impl DeerawApp {
         let wheel_steps = self.wheel.trunc();
         self.wheel -= wheel_steps;
 
-        let level = if reset {
-            0
-        } else {
+        let old_scale = self.zoom() / ppp;
+        if reset {
+            self.zoom_level = 0;
+            self.fit_size = None;
+        } else if key_steps + wheel_steps as i32 != 0 {
             let steps = key_steps + wheel_steps as i32;
-            (self.zoom_level + steps).clamp(MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL)
-        };
-        if level == self.zoom_level {
+            // From a zoom off the 20% grid (after a window resize), the first step lands on the
+            // next grid level in that direction, dropping the resize factor.
+            let level = (self.zoom() - 1.0) / ZOOM_STEP;
+            let from = if steps > 0 { (level + 0.01).floor() } else { (level - 0.01).ceil() };
+            self.zoom_level = (from as i32 + steps).clamp(MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL);
+            self.fit_size = None;
+        }
+        if self.zoom() / ppp == old_scale {
             return;
         }
         // Keep the canvas point under the anchor fixed on screen.
         let anchor = over_canvas
             .filter(|_| wheel_steps != 0.0)
             .unwrap_or(canvas_rect.center());
-        let old_scale = self.zoom() / ppp;
-        self.zoom_level = level;
         self.pan = pan_for_zoom(self.pan, anchor - canvas_rect.min, old_scale, self.zoom() / ppp);
     }
 

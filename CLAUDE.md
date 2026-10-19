@@ -130,6 +130,12 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    and tools. Mouse wheel zooms around the cursor (one step per notch; on macOS, which
    reports slow notches as a fraction of a line, each wheel event is one step); Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
+   Resizing the window scales the view along, around the canvas center: zoom is also multiplied by
+   the canvas panel's size relative to `fit_size` (the smaller of the width/height ratios), which is
+   cleared by Ctrl+0/clicking the percentage and set by fitting the window to a pasted image. The
+   layers panel doesn't scale it (`fit_size` changes with the panel). Zooming from such an off-grid
+   zoom first lands on the next 20% level in that direction (and drops the resize factor), so 100%
+   stays reachable.
    Current zoom shows as a percentage at the right end of the toolbar; clicking it resets to 100%.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
    change to objects: paste, draw, text, move, resize, arrow points, delete. Not in history:

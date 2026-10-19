@@ -108,8 +108,14 @@ pub struct DeerawApp {
     focus_editor: bool,
     /// The layers panel, toggled with Ctrl+L.
     show_layers: bool,
-    /// Last frame's canvas panel position, to keep the drawing still when the panel moves.
-    canvas_min: Option<Pos2>,
+    /// Last frame's canvas panel, to keep the drawing still when the panel moves and to scale
+    /// it along when the window is resized.
+    canvas_rect: Option<Rect>,
+    /// Last frame's window size (points), to tell window resizes from layers panel changes.
+    window_size: Option<Vec2>,
+    /// Canvas panel size (points) at which the window resize factor in `zoom()` is 1; `None`
+    /// (factor 1) until the window is first resized after a zoom reset.
+    fit_size: Option<Vec2>,
     /// Copy, Cut or Save as was requested; see `export_step`.
     export: Option<Export>,
     /// Folder of the last opened or saved file, where the next file dialog opens.
@@ -197,8 +203,14 @@ impl eframe::App for DeerawApp {
 }
 
 impl DeerawApp {
+    /// 100% + 20% × level, times how much the canvas panel grew or shrank with the window since
+    /// the zoom was last reset (the smaller of its width and height ratios).
     fn zoom(&self) -> f32 {
-        1.0 + ZOOM_STEP * self.zoom_level as f32
+        let resized = match (self.fit_size, self.canvas_rect) {
+            (Some(fit), Some(canvas)) => (canvas.size() / fit).min_elem(),
+            _ => 1.0,
+        };
+        (1.0 + ZOOM_STEP * self.zoom_level as f32) * resized
     }
 
     /// A click on an object (canvas or layers panel): selects only it, or with Ctrl toggles it.

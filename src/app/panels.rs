@@ -512,9 +512,10 @@ impl DeerawApp {
             .on_hover_cursor(CursorIcon::PointingHand)
             .on_hover_text("Reset to 100%")
             .clicked();
-        if clicked && self.zoom_level != 0 {
+        if clicked {
             let old_scale = self.zoom() / ppp;
             self.zoom_level = 0;
+            self.fit_size = None;
             let center = canvas_rect.center() - canvas_rect.min;
             self.pan = pan_for_zoom(self.pan, center, old_scale, self.zoom() / ppp);
         }
