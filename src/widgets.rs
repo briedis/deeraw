@@ -134,8 +134,8 @@ pub fn blur_button(ui: &mut egui::Ui, selected: bool, strength: BlurStrength) ->
 pub fn align_name(align: Align2) -> String {
     let v = ["top", "middle", "bottom"][align.y() as usize];
     let h = ["left", "center", "right"][align.x() as usize];
-    match (v, h) {
-        ("middle", "center") => "center".to_owned(),
+    match v {
+        "middle" => h.to_owned(),
         _ => format!("{v} {h}"),
     }
 }

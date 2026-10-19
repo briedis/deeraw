@@ -3,7 +3,7 @@
 use eframe::egui::{self, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
 use super::{DeerawApp, MIN_TEXT_BOX, ResizeDrag, SELECTION_COLOR, Tool};
-use crate::geometry::{crop_uv, resize_to, snap_angle, uncropped_rect};
+use crate::geometry::{align_candidates, align_guides, centered_on, crop_uv, resize_to, snap_angle, uncropped_rect};
 use crate::object::{Kind, Object};
 
 /// Size of a resize handle, in points.
@@ -28,9 +28,12 @@ impl DeerawApp {
             }
             return;
         }
+        let targets = self.align_targets(ui.ctx());
         let Some(obj) = self.objects.iter_mut().find(|o| self.selected.contains(&o.id)) else {
             return;
         };
+        // Blurs, strokes and arrows don't line up with anything.
+        let targets = if obj.bindable() { align_candidates(self.resize_drag.as_ref().map_or(obj.rect, |d| d.start), &targets) } else { vec![] };
         if self.editing == Some(obj.id) {
             return;
         }
@@ -109,7 +112,8 @@ impl DeerawApp {
                     Kind::Text { font_px, .. } => font_px,
                     _ => 0.0,
                 };
-                self.resize_drag = Some(ResizeDrag { start: obj.rect, grab_offset: p - handle_pos, start_font_px });
+                let centered = centered_on(obj.rect, &targets);
+                self.resize_drag = Some(ResizeDrag { start: obj.rect, grab_offset: p - handle_pos, start_font_px, centered });
             }
             if let (true, Some(p), Some(drag)) =
                 (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
@@ -120,9 +124,11 @@ impl DeerawApp {
                     Kind::Text { .. } => Some(drag.start.aspect_ratio()),
                     _ => Some(obj.aspect),
                 };
+                let from_center = drag.centered.map(|centered| centered || from_center || self.first_image == Some(obj.id));
                 obj.rect = resize_to(drag.start, dx, dy, p - drag.grab_offset, aspect, from_center);
+                self.guides = align_guides(obj.rect, &targets);
                 match &mut obj.kind {
-                    Kind::Text { frame: Some(frame), .. } => frame.size = obj.rect.size().max(Vec2::splat(MIN_TEXT_BOX)),
+                    Kind::Text { frame: Some(frame), .. } => *frame = obj.rect.size().max(Vec2::splat(MIN_TEXT_BOX)),
                     Kind::Text { font_px, .. } => *font_px = drag.start_font_px * obj.rect.height() / drag.start.height(),
                     _ => {}
                 }
@@ -201,12 +207,12 @@ impl DeerawApp {
             let pointer = response.interact_pointer_pos().map(&to_canvas);
             if let (true, Some(p)) = (response.drag_started_by(PointerButton::Primary), pointer) {
                 let handle_pos = kept.lerp_inside(Vec2::new(dx as f32 + 1.0, dy as f32 + 1.0) / 2.0);
-                self.resize_drag = Some(ResizeDrag { start: *kept, grab_offset: p - handle_pos, start_font_px: 0.0 });
+                self.resize_drag = Some(ResizeDrag { start: *kept, grab_offset: p - handle_pos, start_font_px: 0.0, centered: [false; 2] });
             }
             if let (true, Some(p), Some(drag)) =
                 (response.dragged_by(PointerButton::Primary), pointer, &self.resize_drag)
             {
-                *kept = resize_to(drag.start, dx, dy, p - drag.grab_offset, None, false).intersect(full);
+                *kept = resize_to(drag.start, dx, dy, p - drag.grab_offset, None, [false; 2]).intersect(full);
             }
             if response.drag_stopped() {
                 self.resize_drag = None;

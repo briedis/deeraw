@@ -40,9 +40,9 @@ fn fit_texture_limit(image: Arc<ColorImage>, max_side: usize) -> Arc<ColorImage>
 }
 
 impl DeerawApp {
-    /// Adds an image centered on `center` (canvas pixels). One too big for a GPU texture is
-    /// scaled down to fit, and a notice says so.
-    pub(super) fn add_image(&mut self, ctx: &egui::Context, image: Arc<ColorImage>, center: Pos2) {
+    /// Adds an image centered on `center` (canvas pixels) and returns its id. One too big for a
+    /// GPU texture is scaled down to fit, and a notice says so.
+    pub(super) fn add_image(&mut self, ctx: &egui::Context, image: Arc<ColorImage>, center: Pos2) -> u64 {
         let max_side = ctx.input(|i| i.max_texture_side);
         let [w, h] = image.size;
         let image = fit_texture_limit(image, max_side);
@@ -61,7 +61,7 @@ impl DeerawApp {
         let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
         let min = (center - size / 2.0).round();
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv, pixels: Pixels(image), mosaics });
+        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv, pixels: Pixels(image), mosaics })
     }
 
     /// For the first image on an empty canvas: resizes the window to show `size` (canvas pixels,
@@ -102,7 +102,7 @@ impl DeerawApp {
     }
 
     /// Adds a pasted or opened image centered on `center` (screen), or, on an empty canvas,
-    /// fits the window to it.
+    /// fits the window to it (and it becomes `first_image`).
     pub(super) fn place_image(
         &mut self,
         ctx: &egui::Context,
@@ -112,11 +112,13 @@ impl DeerawApp {
         to_canvas: impl Fn(Pos2) -> Pos2,
     ) {
         let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
-        if self.objects.is_empty() && self.fit_window(ctx, size, canvas_rect) {
-            self.add_image(ctx, image, (size / 2.0).to_pos2());
+        let first = self.objects.is_empty();
+        let id = if first && self.fit_window(ctx, size, canvas_rect) {
+            self.add_image(ctx, image, (size / 2.0).to_pos2())
         } else {
-            self.add_image(ctx, image, to_canvas(center));
-        }
+            self.add_image(ctx, image, to_canvas(center))
+        };
+        self.first_image = first.then_some(id);
     }
 
     /// File > Open (Ctrl+O): picks an image file and decodes it; `canvas` adds it. Native only.

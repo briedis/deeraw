@@ -34,8 +34,11 @@ pub enum Kind {
     /// outline only (then it's grabbed only near the outline).
     Shape { shape: Shape, color: Color32, width: f32, fill: Option<Color32> },
     /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
-    /// Enter and resizing scales `font_px`. With `frame` (drag a box), see `TextFrame`.
-    Text { text: String, font_px: f32, color: Color32, frame: Option<TextFrame> },
+    /// Enter (rows aligned by `align`'s x), resizing scales `font_px`, and `fill` is painted
+    /// behind each row of text only. With `frame` (drag a box: its size, canvas pixels), lines
+    /// wrap at its width, the text is aligned inside it by `align`, `fill` fills it, and resizing
+    /// changes the box, not the font; `rect` is the box, grown taller if the text overflows.
+    Text { text: String, font_px: f32, color: Color32, align: Align2, fill: Option<Color32>, frame: Option<Vec2> },
     /// Pixelates the part `area` (0..1 of the whole, uncropped texture) of image `image`; `rect`
     /// is derived from it, so it moves, resizes and crops with the image. Only the part inside
     /// the image's kept area shows. Kept right above its image.
@@ -159,17 +162,6 @@ impl Head {
     }
 }
 
-/// A text box: lines wrap at its width and the text is aligned inside it. Resizing changes
-/// the box, not the font. The object's `rect` is the box, grown taller if the text overflows.
-#[derive(Clone, Copy, PartialEq)]
-pub struct TextFrame {
-    /// Canvas pixels.
-    pub size: Vec2,
-    pub align: Align2,
-    /// Background; `None` is transparent.
-    pub fill: Option<Color32>,
-}
-
 /// A side of an object's rect.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Side {
@@ -255,10 +247,10 @@ impl Object {
         }
     }
 
-    /// Alignment, for text boxes only.
+    /// Alignment, for text only.
     pub fn align_mut(&mut self) -> Option<&mut Align2> {
         match &mut self.kind {
-            Kind::Text { frame: Some(frame), .. } => Some(&mut frame.align),
+            Kind::Text { align, .. } => Some(align),
             _ => None,
         }
     }
@@ -279,11 +271,11 @@ impl Object {
         }
     }
 
-    /// Background, for text boxes and shapes.
+    /// Background, for text and shapes.
     pub fn fill_mut(&mut self) -> Option<&mut Option<Color32>> {
         match &mut self.kind {
             Kind::Shape { fill, .. } => Some(fill),
-            Kind::Text { frame: Some(frame), .. } => Some(&mut frame.fill),
+            Kind::Text { fill, .. } => Some(fill),
             _ => None,
         }
     }

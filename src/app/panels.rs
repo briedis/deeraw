@@ -57,10 +57,10 @@ impl DeerawApp {
                     Kind::Shape { width, fill, .. } => {
                         info += &format!("\nwidth {width:.0}px, {}", fill_name(*fill));
                     }
-                    Kind::Text { font_px, frame, .. } => {
-                        info += &format!("\nfont {font_px:.0}px");
-                        if let Some(frame) = frame {
-                            info += &format!(", box {}", align_name(frame.align));
+                    Kind::Text { font_px, align, frame, .. } => {
+                        info += &format!("\nfont {font_px:.0}px, {}", align_name(*align));
+                        if frame.is_some() {
+                            info += ", box";
                         }
                     }
                     Kind::Arrow { width, heads, bindings, .. } => {
@@ -226,6 +226,10 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].align_mut().map(|a| *a))
             .unwrap_or(self.style.align);
+        // Only inline text (no box): just left/center/right, shown vertically centered.
+        let text_with = |boxed: bool| targets.iter().any(|&i| matches!(&self.objects[i].kind, Kind::Text { frame, .. } if frame.is_some() == boxed));
+        let inline = text_with(false) && !text_with(true);
+        let shown_align = if inline { Align2([align.x(), egui::Align::Center]) } else { align };
         let show_shape = match self.tool {
             Tool::Shape => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].shape_mut().is_some()),
@@ -316,7 +320,7 @@ impl DeerawApp {
                                 });
                             }
                             if show_align {
-                                self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, align));
+                                self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, shown_align));
                             }
                             if show_fill {
                                 self.style_toggle(ui, StyleSection::Fill, |ui, open| color_swatch(ui, open, &fill_name(fill), fill));
@@ -390,6 +394,14 @@ impl DeerawApp {
                                 for (swatch, name) in PALETTE {
                                     if color_swatch(ui, fill == Some(swatch), name, Some(swatch)) {
                                         new_fill = Some(Some(swatch));
+                                    }
+                                }
+                            }
+                            StyleSection::Align if inline => {
+                                // Keeps the vertical part, which text boxes use.
+                                for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    if align_button(ui, align.x() == x, Align2([x, egui::Align::Center])) {
+                                        new_align = Some(Align2([x, align.y()]));
                                     }
                                 }
                             }

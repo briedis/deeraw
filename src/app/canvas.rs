@@ -2,12 +2,13 @@
 
 use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
+use super::snap::ALIGN_DISTANCE;
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
-use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
-use crate::object::{ArrowHeads, Kind, TextFrame};
-use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
+use crate::geometry::{MIN_SIZE, align_candidates, align_guides, align_offset, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
+use crate::object::{ArrowHeads, Kind};
+use crate::paint::{layout_text, paint_arrow, paint_row_fills, text_padding, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, paint_plain, speed_pressures};
 use crate::style::{Background, Style};
 
@@ -145,19 +146,24 @@ impl DeerawApp {
         // The Blur tool also selects, moves and resizes blurs (and only those).
         let blurring = self.tool == Tool::Blur;
         let ctrl = ui.input(|i| i.modifiers.command);
+        if !ui.input(|i| i.pointer.primary_down()) {
+            self.move_drag = None;
+            self.guides.clear();
+        }
         // Dragging any selected object moves all of them; applied after the loop.
         let mut move_by = Vec2::ZERO;
         let mut clicked = None;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
-            if let Kind::Text { text, font_px, color, frame } = &obj.kind {
+            if let Kind::Text { text, font_px, color, align, frame, .. } = &obj.kind {
                 // Keep the rect in sync with the text layout. Measured at a fixed scale (1 point
                 // per canvas pixel) so zooming doesn't change it.
-                let galley = layout_text(&painter, text, *font_px, *color, *frame);
-                let mut size = galley.size().max(Vec2::splat(MIN_SIZE));
-                if let Some(frame) = frame {
-                    size = Vec2::new(frame.size.x, frame.size.y.max(size.y));
-                }
+                let galley = layout_text(&painter, text, *font_px, *color, *align, *frame);
+                let size = match frame {
+                    Some(frame) => Vec2::new(frame.x, frame.y.max(galley.size().y)),
+                    None => galley.size() + 2.0 * text_padding(*font_px),
+                };
+                let size = size.max(Vec2::splat(MIN_SIZE));
                 obj.rect = Rect::from_min_size(obj.rect.min, size);
             }
             if let Kind::Arrow { start, end, .. } = obj.kind {
@@ -223,10 +229,24 @@ impl DeerawApp {
             self.click_select(id, ctrl);
         }
         if move_by != Vec2::ZERO {
+            // The selection's bounds snap to line up their center with other objects' centers;
+            // only if it's all images, text and shapes (blurs, strokes and arrows move freely).
             self.detach_selected();
+            let (dragged, moved) = self.move_drag.unwrap_or_default();
+            let dragged = dragged + move_by;
+            let selected = || self.objects.iter().filter(|o| self.selected.contains(&o.id));
+            let bounds = selected().fold(Rect::NOTHING, |b, o| b.union(o.rect));
+            let targets = if selected().all(|o| o.bindable()) { align_candidates(bounds, &self.align_targets(ui.ctx())) } else { vec![] };
+            let snap = align_offset(bounds.translate(dragged - moved), &targets, ALIGN_DISTANCE / scale);
+            let delta = dragged + snap - moved;
             for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
-                obj.translate(move_by);
+                obj.translate(delta);
             }
+            self.move_drag = Some((dragged, dragged + snap));
+            if self.first_image.is_some_and(|id| self.selected.contains(&id)) {
+                self.first_image = None;
+            }
+            self.guides = align_guides(bounds.translate(delta), &targets);
             self.update_blur_areas();
         }
         self.follow_blurs();
@@ -300,6 +320,7 @@ impl DeerawApp {
                 self.update_blur_areas();
             }
         }
+        self.paint_guides(ui.painter(), to_screen_pos);
         self.text_editor(ui, to_screen_pos, scale);
         // Registered after the objects and handles, so a space-drag doesn't reach them.
         if self.space_pan {
@@ -557,12 +578,13 @@ impl DeerawApp {
         }
     }
 
-    /// Adds an empty text object (at `min`, or as the box `frame`) and starts editing it.
+    /// Adds an empty text object (its text at `min`, or as the box `frame` there) and starts editing it.
     pub(super) fn start_text(&mut self, min: Pos2, frame: Option<Vec2>) {
         let Style { font_px, color, align, fill, .. } = self.style;
+        // Inline text: the text itself (inside the padding) starts at `min`.
+        let min = if frame.is_none() { min - text_padding(font_px) } else { min };
         let rect = Rect::from_min_size(min, frame.unwrap_or(Vec2::splat(MIN_SIZE)));
-        let frame = frame.map(|size| TextFrame { size, align, fill });
-        let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, frame });
+        let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, align, fill, frame });
         self.editing = Some(id);
         self.focus_editor = true;
     }
@@ -608,35 +630,45 @@ impl DeerawApp {
             self.editing = None;
             return;
         };
-        let Kind::Text { text, font_px, color, frame } = &mut obj.kind else {
+        let Kind::Text { text, font_px, color, align, fill, frame } = &mut obj.kind else {
             self.editing = None;
             return;
         };
         let font = FontId::proportional(*font_px * scale);
         // Lay out exactly like `layout_text` (egui would otherwise wrap at the available width).
-        let screen_frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
-        let color = *color;
+        let screen_frame = frame.map(|f| f * scale);
+        let (color, text_align, fill) = (*color, *align, *fill);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _: f32| {
-            let mut job = text_layout_job(buf.as_str(), font.clone(), color, screen_frame);
+            let mut job = text_layout_job(buf.as_str(), font.clone(), color, text_align, screen_frame);
             job.keep_trailing_whitespace = true;
             ui.fonts_mut(|f| f.layout_job(job))
         };
         // A text box's editor fills the box, with the text aligned in it like when painted.
         let (box_size, align) = match screen_frame {
-            Some(f) => (obj.rect.size() * scale, f.align),
+            Some(_) => (obj.rect.size() * scale, text_align),
             None => (Vec2::splat(1.0), Align2::LEFT_TOP),
         };
-        if let Some(frame) = screen_frame {
-            // The object itself isn't painted while being edited.
+        // The object itself isn't painted while being edited.
+        if screen_frame.is_some() {
             let outline = Rect::from_min_size(to_screen_pos(obj.rect.min), box_size);
-            if let Some(fill) = frame.fill {
+            if let Some(fill) = fill {
                 ui.painter().rect_filled(outline, 0.0, fill);
             }
             let stroke = Stroke::new(1.0, SELECTION_COLOR.gamma_multiply(0.5));
             ui.painter().rect_stroke(outline, 0.0, stroke, StrokeKind::Outside);
         }
+        // Inline text sits inside its padding.
+        let editor_pos = match screen_frame {
+            Some(_) => to_screen_pos(obj.rect.min),
+            None => to_screen_pos(obj.rect.min) + text_padding(*font_px * scale),
+        };
+        if let (None, Some(fill)) = (screen_frame, fill) {
+            let galley = layout_text(ui.painter(), text, *font_px * scale, color, text_align, None);
+            let pos = editor_pos - Vec2::new(galley.rect.left(), 0.0);
+            paint_row_fills(ui.painter(), &galley, pos, *font_px * scale, fill);
+        }
         let output = egui::Area::new(egui::Id::unique(("text-editor", id)))
-            .fixed_pos(to_screen_pos(obj.rect.min))
+            .fixed_pos(editor_pos)
             .order(egui::Order::Foreground)
             .show(ui.ctx(), |ui| {
                 // The dark theme's caret is light blue, invisible on a white canvas; this color

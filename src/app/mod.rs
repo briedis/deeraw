@@ -63,6 +63,9 @@ struct ResizeDrag {
     /// Font size at drag start (plain text). The new size is derived from it, not from the
     /// previous frame, because the text layout re-sizes the rect every frame.
     start_font_px: f32,
+    /// Per axis, whether the center was lined up with another object at drag start: it then
+    /// resizes from the center on that axis, so it stays lined up.
+    centered: [bool; 2],
 }
 
 /// A short message shown like a tooltip, e.g. after copying; see `notice`.
@@ -101,6 +104,14 @@ pub struct DeerawApp {
     resize_drag: Option<ResizeDrag>,
     /// Where the arrow endpoint being dragged would be without snapping, canvas pixels.
     point_drag: Option<Pos2>,
+    /// While moving the selection: how far it was dragged and how far it was actually moved
+    /// (with alignment snapping) since the drag started, canvas pixels.
+    move_drag: Option<(Vec2, Vec2)>,
+    /// The image pasted or opened onto an empty canvas, until it's moved: it resizes from its
+    /// center, so it stays centered where the window was fitted to it.
+    first_image: Option<u64>,
+    /// Alignment guides (canvas pixels) of the move or resize in progress; see `align_targets`.
+    guides: Vec<[Pos2; 2]>,
     /// Image currently being cropped; see `crop_ui`.
     cropping: Option<u64>,
     /// Text object currently being edited.

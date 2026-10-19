@@ -55,6 +55,18 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    undo any stretching; opposite corner stays put), edge midpoints resize only horizontally or
    vertically. The grabbed handle tracks the cursor exactly (rect is recomputed each frame from
    the drag-start rect and the grab offset, not by accumulating deltas). Holding Shift resizes from the center.
+   The image pasted or opened onto an empty canvas (`first_image`) also resizes from its center, until
+   it's moved; later images, and that one once moved, resize from the opposite corner/side.
+   **Alignment snapping:** moving a selection of only images, text and shapes (its bounding box; blurs,
+   strokes and arrows never snap) snaps its center to line up with
+   an unselected image, text or shape's center within `ALIGN_DISTANCE` (6pt), per axis (centers only,
+   not edges), and shows red guide lines through the lined-up centers (spanning both objects). Hold
+   Alt (Option) to move freely. A move keeps its unsnapped total (`move_drag`), so it snaps and
+   unsnaps without drift; the math is `align_offset`/`align_guides` in geometry.rs. An object whose
+   center lines up with another's when a resize starts resizes from the center on that axis
+   (`ResizeDrag::centered`, `centered_on`), so it stays lined up; resize handles don't snap.
+   Only objects at least about as big count (`align_candidates`: the moved one's area at most 1.25×
+   theirs), so a big object isn't pulled onto small ones, while small ones still line up with it.
    Min size 4px. Delete or Backspace removes the selected object(s); Ctrl+D duplicates them (copies offset by
    20px, on top, and selected). Ctrl+A selects everything (and switches to Select).
    **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
@@ -118,11 +130,15 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely. Picking a blur with
      Select (click or drag) switches to the Blur tool, which also selects, moves and resizes blurs (only
      blurs; clicking elsewhere deselects) and restyles the selected ones. While cropping, the image shows unblurred (on screen only).
-   - Text: two modes. Click to place auto-width text: one line per Enter; it has only corner
-     handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`TextFrame`):
-     lines break at the box width and the text is aligned inside it (9 alignments, picked in the
-     style panel) over a background (transparent by default, or a palette color, also in the style
-     panel); the box grows taller if the text overflows. All 8 handles resize the box freely
+   - Text: two modes, both with an alignment and a background (`align`, `fill` on `Kind::Text`; picked in the
+     style panel; background transparent by default, or a palette color). Click to place auto-width text:
+     one line per Enter, the lines aligned left/center/right by the alignment's x; its rect is the text
+     plus padding (`text_padding`: 0.2× the font size each side, 0.05× above and below), and the
+     background is painted behind each non-empty line only, padded alike, so it stays within the rect
+     (`paint_row_fills`); it has only corner
+     handles and resizing scales the font. Drag a box (≥20px wide) for a text box (`frame`: its size):
+     lines break at the box width and the text is aligned inside it (9 alignments) and the background
+     fills the box; the box grows taller if the text overflows. All 8 handles resize the box freely
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
      Double-click a text object to edit it; with Select, double-clicking empty space starts a text there (switching to Text). The Text tool stays active while typing (the style panel restyles that text too); finishing (Escape or clicking elsewhere) switches back to Select (`end_editing`). A press on the canvas ends typing before the tool sees it, so clicking away doesn't start another text.
    - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only
@@ -157,8 +173,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    or while a stroke, arrow, line, shape or text is selected. It shows the current color and size; clicking
    either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,
    red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Arrow heads (arrows, not lines; `ArrowHeads`/`Head` in `object.rs`): a start button (pointing left) and an end button (pointing right), each previewing that end and opening its options: none, open lines or solid triangle (default: none at the start, solid at the end). Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
-   (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text boxes and the Text tool
-   also get an alignment button (3×3 grid); text boxes, shapes and the Text and Shape tools get a fill button
+   (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text and the Text tool
+   also get an alignment button (3×3 grid; when the targets are only inline text, just a left/center/right row, which keeps the vertical part); text, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
    The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
    With a drawing tool it sets the style of new objects; with a selection it restyles every

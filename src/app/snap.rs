@@ -14,8 +14,28 @@ const SNAP_DISTANCE: f32 = 12.0;
 const CIRCLE_RADIUS: f32 = 4.0;
 /// Radius of the circle an endpoint is snapped to, in points.
 const ACTIVE_RADIUS: f32 = 6.0;
+/// A moved selection's center snaps to other objects' centers within this, in points.
+pub(super) const ALIGN_DISTANCE: f32 = 6.0;
+/// Color of the alignment guides.
+const GUIDE_COLOR: Color32 = Color32::from_rgb(239, 68, 68);
 
 impl DeerawApp {
+    /// What a moved or resized selection's center may line up with: the unselected images, text and
+    /// shapes (see `align_candidates` for which of them).
+    /// Alt (Option) held: nothing.
+    pub(super) fn align_targets(&self, ctx: &egui::Context) -> Vec<Rect> {
+        if ctx.input(|i| i.modifiers.alt) {
+            return vec![];
+        }
+        self.objects.iter().filter(|o| o.bindable() && !self.selected.contains(&o.id)).map(|o| o.rect).collect()
+    }
+
+    pub(super) fn paint_guides(&self, painter: &Painter, to_screen_pos: impl Fn(Pos2) -> Pos2) {
+        for [a, b] in &self.guides {
+            painter.line_segment([to_screen_pos(*a), to_screen_pos(*b)], Stroke::new(1.0, GUIDE_COLOR));
+        }
+    }
+
     /// The anchor closest to `pointer` (screen) within `SNAP_DISTANCE`: what an endpoint there
     /// attaches to, and where it goes (canvas pixels).
     pub(super) fn snap(&self, pointer: Pos2, to_screen_pos: impl Fn(Pos2) -> Pos2) -> Option<(Binding, Pos2)> {
@@ -144,7 +164,7 @@ mod tests {
     fn app_with_arrow_on_text() -> DeerawApp {
         let mut app = DeerawApp::default();
         let rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(50.0, 20.0));
-        let text = Kind::Text { text: "hi".into(), font_px: 16.0, color: Color32::BLACK, frame: None };
+        let text = Kind::Text { text: "hi".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None };
         let target = app.add(rect, text);
         let end = anchor(rect, Side::Left);
         let binding = Binding { id: target, side: Side::Left };

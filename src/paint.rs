@@ -5,12 +5,20 @@ use std::sync::Arc;
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
 
 use crate::geometry::{crop_uv, diamond, uncropped_rect};
-use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Object, Shape, TextFrame};
+use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Object, Shape};
 use crate::stroke::{paint_hand_drawn, paint_plain};
 
 /// Length of an arrow's head, in canvas pixels: base plus this much per pixel of line width.
 const ARROW_HEAD: f32 = 12.0;
 const ARROW_HEAD_PER_WIDTH: f32 = 2.0;
+/// Room around inline (unboxed) text inside its rect, per pixel of font size, so its
+/// background (which fills it) stays within the object.
+const TEXT_PADDING: Vec2 = Vec2::new(0.2, 0.05);
+
+/// Room around inline text inside its rect, for a font size (in any unit).
+pub fn text_padding(font_px: f32) -> Vec2 {
+    TEXT_PADDING * font_px
+}
 /// Angle between an arrow's line and each side of its head, in radians.
 const ARROW_HEAD_SPREAD: f32 = 0.45;
 
@@ -40,15 +48,19 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
         Kind::Shape { shape, color, width, fill } => {
             paint_shape(painter, *shape, rect, Stroke::new(width * scale, *color), *fill);
         }
-        Kind::Text { text, font_px, color, frame } => {
-            let frame = frame.map(|f| TextFrame { size: f.size * scale, ..f });
-            if let Some(fill) = frame.and_then(|f| f.fill) {
-                painter.rect_filled(rect, 0.0, fill);
-            }
-            let galley = layout_text(painter, text, font_px * scale, *color, frame);
+        Kind::Text { text, font_px, color, align, fill, frame } => {
+            let frame = frame.map(|f| f * scale);
+            let galley = layout_text(painter, text, font_px * scale, *color, *align, frame);
             // Same placement as `TextEdit` uses, so editing doesn't shift the text.
-            let align = frame.map_or(Align2::LEFT_TOP, |f| f.align);
+            let (align, rect) = if frame.is_some() { (*align, rect) } else { (Align2::LEFT_TOP, rect.shrink2(text_padding(font_px * scale))) };
             let pos = align.align_size_within_rect(galley.size(), rect).min - Vec2::new(galley.rect.left(), 0.0);
+            match (fill, frame) {
+                (Some(fill), Some(_)) => {
+                    painter.rect_filled(rect, 0.0, *fill);
+                }
+                (Some(fill), None) => paint_row_fills(painter, &galley, pos, font_px * scale, *fill),
+                (None, _) => {}
+            }
             painter.galley(pos, galley, *color);
         }
     }
@@ -73,20 +85,29 @@ pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, strength: Blu
     painter.image(mosaic.id(), screen, mosaic_uv, Color32::WHITE);
 }
 
-/// Lays out a text object's text. `font_px` and `frame` are in the same unit (canvas pixels
-/// for measuring, screen points for painting).
-pub fn layout_text(painter: &Painter, text: &str, font_px: f32, color: Color32, frame: Option<TextFrame>) -> Arc<egui::Galley> {
-    painter.layout_job(text_layout_job(text, FontId::proportional(font_px), color, frame))
+/// Lays out a text object's text. `font_px` and `frame` (the box size) are in the same unit
+/// (canvas pixels for measuring, screen points for painting).
+pub fn layout_text(painter: &Painter, text: &str, font_px: f32, color: Color32, align: Align2, frame: Option<Vec2>) -> Arc<egui::Galley> {
+    painter.layout_job(text_layout_job(text, FontId::proportional(font_px), color, align, frame))
 }
 
-/// Plain text doesn't wrap; a text box wraps at its width with its rows aligned horizontally.
-pub fn text_layout_job(text: &str, font: FontId, color: Color32, frame: Option<TextFrame>) -> egui::text::LayoutJob {
-    let wrap = frame.map_or(f32::INFINITY, |f| f.size.x);
+/// Plain text doesn't wrap; a text box wraps at its width. Either way the rows are aligned
+/// horizontally by `align`.
+pub fn text_layout_job(text: &str, font: FontId, color: Color32, align: Align2, frame: Option<Vec2>) -> egui::text::LayoutJob {
+    let wrap = frame.map_or(f32::INFINITY, |f| f.x);
     let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, wrap);
-    if let Some(frame) = frame {
-        job.halign = frame.align.x();
-    }
+    job.halign = align.x();
     job
+}
+
+/// An inline text's background: behind each (non-empty) row of `galley` painted at `pos`,
+/// with the text's padding around it (so it stays within the object's rect). `font_px` is in
+/// the same unit as the galley.
+pub fn paint_row_fills(painter: &Painter, galley: &egui::Galley, pos: Pos2, font_px: f32, fill: Color32) {
+    for row in galley.rows.iter().filter(|r| !r.row.glyphs.is_empty()) {
+        let rect = row.rect().translate(pos.to_vec2());
+        painter.rect_filled(rect.expand2(text_padding(font_px)), 0.0, fill);
+    }
 }
 
 /// Draws `shape` filling `rect` (screen points), the outline centered on its edge.
