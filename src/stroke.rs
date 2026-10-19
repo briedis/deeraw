@@ -3,7 +3,9 @@
 use eframe::egui::{self, Color32, Painter, Pos2, Vec2};
 
 /// Drawing speed (canvas pixels per second) at which a hand-drawn stroke is thinnest.
-const THIN_SPEED: f32 = 2500.0;
+const THIN_SPEED: f32 = 1200.0;
+/// Stroke points closer together than this (physical pixels) are thinned out before smoothing.
+const MIN_SPACING_PIXELS: f32 = 4.0;
 /// How quickly a stroke's pressure follows the speed (0..1 per point); lower is smoother.
 const PRESSURE_EASING: f32 = 0.25;
 
@@ -50,19 +52,11 @@ pub fn speed_pressures(points: &[Pos2], times: &[f64]) -> Vec<f32> {
 /// 0.4× (`pressure` 0) to 1.5× `width` (pressure 1). One anti-aliased mesh (a strip with a
 /// feathered edge on both sides), plus round caps and round joins at sharp turns.
 pub fn paint_hand_drawn(painter: &Painter, points: &[Pos2], pressures: &[f32], width: f32, color: Color32) {
-    let Some(&first) = points.first() else { return };
-    let radius = |pressure: f32| width * (0.4 + 1.1 * pressure) / 2.0;
-    // Each point is pulled towards the previous smoothed point (the last one stays): strongly
-    // for close points (slow, jittery drawing), barely for far ones (fast drawing, where it would
-    // flatten the shape; the spline rounds those instead).
-    let mut smooth = Vec::with_capacity(points.len());
-    let mut current = first;
-    for (i, &p) in points.iter().enumerate() {
-        let follow = (current.distance(p) / 12.0).clamp(0.3, 1.0);
-        current = if i + 1 == points.len() { p } else { current.lerp(p, follow) };
-        smooth.push(current);
+    if points.is_empty() {
+        return;
     }
-    let (smooth, pressures) = spline(&smooth, pressures);
+    let radius = |pressure: f32| width * (0.4 + 1.1 * pressure) / 2.0;
+    let (smooth, pressures) = smooth_stroke(points, pressures, painter.pixels_per_point());
     let n = smooth.len();
     let feather = 1.0 / painter.pixels_per_point();
     let mut mesh = egui::epaint::Mesh::default();
@@ -97,6 +91,47 @@ pub fn paint_hand_drawn(painter: &Painter, points: &[Pos2], pressures: &[f32], w
             painter.circle_filled(smooth[i], radius(pressures[i]), color);
         }
     }
+}
+
+/// Paints a plain (constant width) stroke through the points (screen), smoothed like the
+/// hand-drawn style.
+pub fn paint_plain(painter: &Painter, points: &[Pos2], width: f32, color: Color32) {
+    if let [dot] = points[..] {
+        painter.circle_filled(dot, width / 2.0, color);
+        return;
+    }
+    let (smooth, _) = smooth_stroke(points, &vec![0.0; points.len()], painter.pixels_per_point());
+    painter.line(smooth, egui::Stroke::new(width, color));
+}
+
+/// A stroke's points (screen) ready to paint, with their pressures:
+/// - Points closer than `MIN_SPACING` to the last kept one are dropped (the last always stays):
+///   the mouse moves in whole physical pixels, which makes slow lines staircase.
+/// - Each point is pulled towards the previous smoothed point (the last one stays): strongly for
+///   close points (slow, jittery drawing), barely for far ones (fast drawing, where it would
+///   flatten the shape; the spline rounds those instead).
+/// - A Catmull-Rom spline through them, so sparse points still give a round curve.
+pub fn smooth_stroke(points: &[Pos2], pressures: &[f32], pixels_per_point: f32) -> (Vec<Pos2>, Vec<f32>) {
+    let spacing = MIN_SPACING_PIXELS / pixels_per_point;
+    let mut kept: Vec<(Pos2, f32)> = vec![];
+    for (i, (&p, &pressure)) in points.iter().zip(pressures).enumerate() {
+        let far = kept.last().is_none_or(|(last, _)| last.distance(p) >= spacing);
+        if far || i + 1 == points.len() {
+            if !far && kept.len() > 1 {
+                kept.pop();
+            }
+            kept.push((p, pressure));
+        }
+    }
+    let mut smooth = Vec::with_capacity(kept.len());
+    let mut current = kept[0].0;
+    for (i, &(p, _)) in kept.iter().enumerate() {
+        let follow = (current.distance(p) / 12.0).clamp(0.3, 1.0);
+        current = if i + 1 == kept.len() { p } else { current.lerp(p, follow) };
+        smooth.push(current);
+    }
+    let pressures: Vec<f32> = kept.iter().map(|(_, pressure)| *pressure).collect();
+    spline(&smooth, &pressures)
 }
 
 /// Subdivides a polyline into a Catmull-Rom spline through its points (about one point per 2
@@ -160,5 +195,16 @@ mod tests {
             assert!(curve.iter().any(|q| q.distance(p) < 1e-4), "{p:?} not on the curve");
         }
         assert_eq!(pressures.last(), Some(&1.0));
+    }
+
+    #[test]
+    fn smoothing_thins_out_close_points_but_keeps_the_ends() {
+        // A slow staircase: 1px steps alternating right and down.
+        let points: Vec<Pos2> = (0..=40).map(|i| Pos2::new(((i + 1) / 2) as f32, (i / 2) as f32)).collect();
+        let (smooth, pressures) = smooth_stroke(&points, &vec![0.5; points.len()], 1.0);
+        assert_eq!(smooth.len(), pressures.len());
+        assert_eq!((smooth[0], smooth.last().copied()), (points[0], points.last().copied()));
+        // Close to the diagonal it was drawn along, not stepping a pixel off it.
+        assert!(smooth.iter().all(|p| (p.x - p.y).abs() < 1.0), "{smooth:?}");
     }
 }

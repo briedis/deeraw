@@ -6,7 +6,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, S
 
 use crate::geometry::{crop_uv, diamond, uncropped_rect};
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Object, Shape, TextFrame};
-use crate::stroke::paint_hand_drawn;
+use crate::stroke::{paint_hand_drawn, paint_plain};
 
 /// Length of an arrow's head, in canvas pixels: base plus this much per pixel of line width.
 const ARROW_HEAD: f32 = 12.0;
@@ -29,10 +29,8 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
             let points: Vec<Pos2> = points.iter().map(|p| rect.lerp_inside(p.to_vec2())).collect();
             if *hand_drawn {
                 paint_hand_drawn(painter, &points, pressures, width * scale, *color);
-            } else if let [dot] = points[..] {
-                painter.circle_filled(dot, width * scale / 2.0, *color);
             } else {
-                painter.line(points, Stroke::new(width * scale, *color));
+                paint_plain(painter, &points, width * scale, *color);
             }
         }
         Kind::Arrow { start, end, color, width, heads, .. } => {

@@ -8,7 +8,7 @@ use crate::export::{Export, ExportTarget};
 use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
 use crate::object::{ArrowHeads, Kind, TextFrame};
 use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
-use crate::stroke::{add_stroke_points, paint_hand_drawn, speed_pressures};
+use crate::stroke::{add_stroke_points, paint_hand_drawn, paint_plain, speed_pressures};
 use crate::style::{Background, Style};
 
 /// How close (in points) the pointer must be to an arrow's line to grab it.
@@ -249,10 +249,8 @@ impl DeerawApp {
                 let (width, color) = (self.style.line_width * scale, self.style.color);
                 if self.style.hand_drawn {
                     paint_hand_drawn(&painter, &screen, &speed_pressures(points, times), width, color);
-                } else if let [dot] = screen[..] {
-                    painter.circle_filled(dot, width / 2.0, color);
                 } else {
-                    painter.line(screen, Stroke::new(width, color));
+                    paint_plain(&painter, &screen, width, color);
                 }
             }
             Some(Drawing::Arrow(start, end, bindings)) => {

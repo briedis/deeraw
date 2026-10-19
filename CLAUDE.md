@@ -67,9 +67,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke (it starts on press, so a click leaves a dot); stays in Pencil mode. Two pen styles (style panel):
-     plain (uniform width) or hand-drawn, like Excalidraw's freehand: the points are smoothed
-     (strongly where close together, i.e. slow jitter; barely where far apart) and drawn as a
-     Catmull-Rom spline (`spline`), and the width follows drawing speed (slow → up to 1.5× the line width, fast, from 2500 px/s
+     plain (uniform width) or hand-drawn, like Excalidraw's freehand. Both are smoothed when painted
+     (`smooth_stroke`): points closer than 4 physical pixels to the last kept one are dropped (mouse
+     pixel steps make slow lines staircase), the rest pulled together (strongly where close, i.e.
+     slow jitter; barely where far apart) and drawn as a Catmull-Rom spline (`spline`). In the
+     hand-drawn style the width follows drawing speed (slow → up to 1.5× the line width, fast, from 1200 px/s
      → down to 0.4×). Speed-based pressures are recorded for every stroke, so a stroke can be
      switched between styles afterwards. While drawing, every `PointerMoved` event of the frame
      is recorded (not just the latest position), with times spread by distance (`add_stroke_points`). Hand-drawn strokes are painted as one feathered mesh
