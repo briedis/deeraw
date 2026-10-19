@@ -120,6 +120,8 @@ pub struct DeerawApp {
     /// Frame of the last Edit > Paste: that paste goes to the canvas center, not under the
     /// pointer (which is still where the menu was).
     menu_paste_frame: Option<u64>,
+    /// Started with `--paste` (by the macOS menu bar launcher): paste the clipboard on the first frame.
+    paste_on_start: bool,
     notice: Option<Notice>,
     /// Last window title sent; see `update_title`.
     title: Option<String>,
@@ -153,7 +155,8 @@ impl DeerawApp {
     pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
         let Settings { style, background, save_dir } =
             storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
-        Self { style, background, save_dir, ..Default::default() }
+        let paste_on_start = std::env::args().any(|a| a == "--paste");
+        Self { style, background, save_dir, paste_on_start, ..Default::default() }
     }
 }
 
@@ -166,6 +169,11 @@ impl eframe::App for DeerawApp {
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
             self.show_layers = !self.show_layers;
+        }
+        if std::mem::take(&mut self.paste_on_start) {
+            // Like Edit > Paste; text is ignored outside a text box, so only an image is placed.
+            self.menu_paste_frame = Some(ui.ctx().cumulative_frame_nr());
+            ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.show_layers {

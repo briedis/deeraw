@@ -42,7 +42,11 @@ final class Launcher: NSObject, NSApplicationDelegate {
     }
 
     @objc func openDeeraw() {
-        NSWorkspace.shared.openApplication(at: deerawURL, configuration: NSWorkspace.OpenConfiguration())
+        // --paste: Deeraw places the clipboard's image, if any. Only on a fresh start; a running
+        // Deeraw is just brought to the front.
+        let config = NSWorkspace.OpenConfiguration()
+        config.arguments = ["--paste"]
+        NSWorkspace.shared.openApplication(at: deerawURL, configuration: config)
     }
 }
 

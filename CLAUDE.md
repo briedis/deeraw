@@ -231,7 +231,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` + `Deeraw Launcher.app` zip) on every push/PR; a `v*` tag publishes a release.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
-  shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit. It
+  shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit.
+  It passes `--paste`, so a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
+  (`paste_on_start`; text is ignored outside a text box, so only an image is placed). A running Deeraw gets
+  no arguments from macOS and is just brought to the front. It
   registers itself as a login item (`SMAppService`, needs it in `/Applications`). `build.sh [out_dir] [icns]`
   builds it universal (default: installs to `/Applications`); the menu bar PNGs are committed, rendered from
   `menubar-deer.svg` (the deer from `assets/deer.svg`, black, thicker strokes, no background).
