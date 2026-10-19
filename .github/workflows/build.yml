@@ -30,6 +30,8 @@ jobs:
         run: |
           New-Item -ItemType Directory dist | Out-Null
           Copy-Item target/release/deeraw.exe dist/
+          # Symbols, so crash report backtraces name functions (found next to the exe).
+          Copy-Item target/release/deeraw.pdb dist/
           Copy-Item LICENSE.md dist/
           Compress-Archive -Path dist/* -DestinationPath deeraw-windows-x64.zip
       - uses: actions/upload-artifact@v6

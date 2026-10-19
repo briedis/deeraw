@@ -28,6 +28,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 1. **Image canvas** — white canvas (1024×768 window).
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
+     Images with a side over the GPU's texture limit (`max_texture_side`, usually 8192) are scaled
+     down to fit (`fit_texture_limit` in files.rs), with a notice; egui panics on bigger textures.
    - Ctrl+S saves the same image as a PNG file: a Save As dialog (rfd) suggests
      `YYYY-MM-DD_HHMMSS.png` (local time) and opens in the last save's folder (per session).
      `.png` is added if no extension is typed; a failed write shows an error dialog.
@@ -259,3 +261,7 @@ Ideas, not commitments (eframe/egui was chosen for quick setup, easy mouse input
 4. SVG export.
 
 Order and scope are open to change; confirm with the user before starting each step.
+- Crash reports: a panic hook (`install_crash_report`, main.rs, native only) writes
+  `crash-<time>.txt` (version, OS, panic message and place, backtrace) to the settings folder
+  (`eframe::storage_dir("Deeraw")`, e.g. `%APPDATA%\Deeraw\data`) and shows a dialog with its
+  path and the issues URL. The Windows zip ships `deeraw.pdb` so release backtraces have names.

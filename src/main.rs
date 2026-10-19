@@ -17,6 +17,9 @@ use app::DeerawApp;
 
 /// Window/taskbar icon and the About window's logo; rendered from `assets/deer.svg`.
 const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+/// Where crash reports should go.
+#[cfg(not(target_arch = "wasm32"))]
+const ISSUES_URL: &str = "https://github.com/briedis/deeraw/issues";
 
 /// wgpu's surface and device settings.
 ///
@@ -45,6 +48,36 @@ fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
     options
 }
 
+/// On a panic, besides the usual message on stderr (which release builds on Windows have no
+/// console for), writes a crash report (version, OS, message with where it happened, backtrace)
+/// to `crash-<time>.txt` in the settings folder and shows where, so it can be attached to an issue.
+#[cfg(not(target_arch = "wasm32"))]
+fn install_crash_report() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default(info);
+        let report = format!(
+            "Deeraw {} on {} {}\n\n{info}\n\nBacktrace:\n{}",
+            env!("CARGO_PKG_VERSION"),
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            std::backtrace::Backtrace::force_capture(),
+        );
+        let Some(dir) = eframe::storage_dir("Deeraw") else { return };
+        let path = dir.join(chrono::Local::now().format("crash-%Y-%m-%d_%H%M%S.txt").to_string());
+        if std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, report)).is_ok() {
+            rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Error)
+                .set_title("Deeraw crashed")
+                .set_description(format!(
+                    "A crash report was saved to\n{}\n\nPlease attach it to an issue at\n{ISSUES_URL}",
+                    path.display()
+                ))
+                .show();
+        }
+    }));
+}
+
 /// Shared setup for the native and web builds.
 fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
     // Ctrl +/- zooms the canvas, not the whole UI.
@@ -54,6 +87,7 @@ fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
+    install_crash_report();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Deeraw")

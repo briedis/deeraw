@@ -24,9 +24,34 @@ const FIT_MAX_SCREEN: f32 = 0.75;
 #[cfg(not(target_arch = "wasm32"))]
 const OPEN_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "bmp", "gif", "webp"];
 
+/// `image` scaled down so neither side exceeds `max_side`, if it does.
+fn fit_texture_limit(image: Arc<ColorImage>, max_side: usize) -> Arc<ColorImage> {
+    let [w, h] = image.size;
+    if w.max(h) <= max_side {
+        return image;
+    }
+    let scale = max_side as f64 / w.max(h) as f64;
+    let side = |n: usize| ((n as f64 * scale).round() as u32).clamp(1, max_side as u32);
+    let (sw, sh) = (side(w), side(h));
+    // Premultiplied, which is what filtering should average anyway.
+    let rgba = image::RgbaImage::from_raw(w as u32, h as u32, image.as_raw().to_vec()).expect("ColorImage is RGBA");
+    let scaled = image::imageops::resize(&rgba, sw, sh, image::imageops::FilterType::Triangle);
+    Arc::new(ColorImage::from_rgba_premultiplied([sw as usize, sh as usize], scaled.as_raw()))
+}
+
 impl DeerawApp {
-    /// Adds an image centered on `center` (canvas pixels).
+    /// Adds an image centered on `center` (canvas pixels). One too big for a GPU texture is
+    /// scaled down to fit, and a notice says so.
     pub(super) fn add_image(&mut self, ctx: &egui::Context, image: Arc<ColorImage>, center: Pos2) {
+        let max_side = ctx.input(|i| i.max_texture_side);
+        let [w, h] = image.size;
+        let image = fit_texture_limit(image, max_side);
+        if image.size != [w, h] {
+            let [sw, sh] = image.size;
+            let text = format!("Scaled down from {w} × {h} to {sw} × {sh} px\n(the GPU allows at most {max_side} px)");
+            let (pos, now) = ctx.input(|i| (i.pointer.hover_pos(), i.time));
+            self.notice = Some(Notice { text, pos, shown_at: now });
+        }
         let texture = ctx.load_texture(
             format!("image-{}", self.next_id),
             (*image).clone(),
@@ -190,5 +215,19 @@ impl DeerawApp {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn images_fit_the_texture_limit() {
+        let image = Arc::new(ColorImage::filled([300, 100], egui::Color32::RED));
+        assert_eq!(fit_texture_limit(image.clone(), 300).size, [300, 100]);
+        let scaled = fit_texture_limit(image, 150);
+        assert_eq!(scaled.size, [150, 50]);
+        assert_eq!(scaled.pixels[0], egui::Color32::RED);
     }
 }
