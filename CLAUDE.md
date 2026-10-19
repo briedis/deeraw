@@ -250,6 +250,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - Git repo on `master`; commit after each working step.
 - Never add a `Co-Authored-By:` trailer (or any other co-author credit) to a commit. Commits are
   authored by the repo owner alone, whoever or whatever wrote the code.
+- Crash reports: a panic hook (`install_crash_report`, main.rs, native only) writes
+  `crash-<time>.txt` (version, OS, panic message and place, backtrace) to the settings folder
+  (`eframe::storage_dir("Deeraw")`, e.g. `%APPDATA%\Deeraw\data`) and shows a dialog with its
+  path and the issues URL. The Windows zip ships `deeraw.pdb` so release backtraces have names.
 
 ## Planned next steps
 
@@ -261,7 +265,3 @@ Ideas, not commitments (eframe/egui was chosen for quick setup, easy mouse input
 4. SVG export.
 
 Order and scope are open to change; confirm with the user before starting each step.
-- Crash reports: a panic hook (`install_crash_report`, main.rs, native only) writes
-  `crash-<time>.txt` (version, OS, panic message and place, backtrace) to the settings folder
-  (`eframe::storage_dir("Deeraw")`, e.g. `%APPDATA%\Deeraw\data`) and shows a dialog with its
-  path and the issues URL. The Windows zip ships `deeraw.pdb` so release backtraces have names.
