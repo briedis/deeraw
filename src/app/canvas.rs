@@ -353,6 +353,9 @@ impl DeerawApp {
             match event {
                 egui::Event::MouseWheel { unit, delta, .. } if over_canvas.is_some() => {
                     self.wheel += match unit {
+                        // macOS accelerates wheel deltas, so a slow notch is only a fraction of a line:
+                        // there each notch (one event) is one step.
+                        egui::MouseWheelUnit::Line if cfg!(target_os = "macos") => delta.y.signum(),
                         egui::MouseWheelUnit::Line => delta.y,
                         egui::MouseWheelUnit::Point => delta.y / WHEEL_POINTS_PER_STEP,
                         egui::MouseWheelUnit::Page => delta.y * 10.0,

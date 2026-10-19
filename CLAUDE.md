@@ -127,7 +127,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      corner resizing keeps the cropped part's undistorted proportions. One undo step per crop session.
 5. **Pan & zoom** — middle-button drag pans, and so does left-drag while holding Space (not while
    typing; open-hand cursor while held, closed hand while panning). A blocking widget over the canvas keeps that drag from objects
-   and tools. Mouse wheel zooms around the cursor; Ctrl +/- zoom
+   and tools. Mouse wheel zooms around the cursor (one step per notch; on macOS, which
+   reports slow notches as a fraction of a line, each wheel event is one step); Ctrl +/- zoom
    around the canvas center; Ctrl+0 resets. Steps of 20% (zoom = 100% + 20% × level, 20%–500%).
    Current zoom shows as a percentage at the right end of the toolbar; clicking it resets to 100%.
 6. **Undo/redo** — Ctrl+Z undoes, Ctrl+Y or Ctrl+Shift+Z redoes (up to 200 steps). Covers every
