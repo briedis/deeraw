@@ -19,7 +19,7 @@ use app::DeerawApp;
 const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
 /// Where crash reports should go.
 #[cfg(not(target_arch = "wasm32"))]
-const ISSUES_URL: &str = "https://github.com/briedis/deeraw/issues";
+const ISSUES_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/issues");
 
 /// wgpu's surface and device settings.
 ///

@@ -60,6 +60,9 @@ impl DeerawApp {
                 }
             });
             ui.menu_button("Help", |ui| {
+                if menu_item(ui, "View on GitHub", None, true) {
+                    ui.ctx().open_url(egui::OpenUrl::new_tab(env!("CARGO_PKG_REPOSITORY")));
+                }
                 if menu_item(ui, "About Deeraw", None, true) {
                     self.show_about = true;
                 }

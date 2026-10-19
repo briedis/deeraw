@@ -168,7 +168,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      text being edited). A menu Paste goes to the canvas center, not under the pointer.
    - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
-   - Help: About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
+   - Help: View on GitHub (opens `repository` from Cargo.toml in the browser); About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
      (`authors`), read with `env!`. Escape or × closes it. It also links the license.
 10. **Remembered settings** — the style (color, sizes, pen, arrow heads, alignment, fill), the canvas
     background and the last file folder survive a relaunch, via eframe's `persistence` feature
