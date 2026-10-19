@@ -229,7 +229,12 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   Nothing here draws indirectly. Symptoms of it coming back: the app exits at startup with
   `Error: Wgpu(RequestDeviceError(... Device(Lost)))` and no window.
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
-- CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip) on every push/PR; a `v*` tag publishes a release.
+- CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` + `Deeraw Launcher.app` zip) on every push/PR; a `v*` tag publishes a release.
+- macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
+  shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit. It
+  registers itself as a login item (`SMAppService`, needs it in `/Applications`). `build.sh [out_dir] [icns]`
+  builds it universal (default: installs to `/Applications`); the menu bar PNGs are committed, rendered from
+  `menubar-deer.svg` (the deer from `assets/deer.svg`, black, thicker strokes, no background).
 - Git repo on `master`; commit after each working step.
 - Never add a `Co-Authored-By:` trailer (or any other co-author credit) to a commit. Commits are
   authored by the repo owner alone, whoever or whatever wrote the code.
