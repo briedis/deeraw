@@ -5,7 +5,7 @@ use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, 
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
-use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom};
+use crate::geometry::{MIN_SIZE, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
 use crate::object::{ArrowHeads, Kind, TextFrame};
 use crate::paint::{layout_text, paint_arrow, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, speed_pressures};
@@ -500,7 +500,8 @@ impl DeerawApp {
                 }
             }
             Tool::Arrow | Tool::Line => {
-                // Either end snaps to a nearby text or image side and attaches to it.
+                // Either end snaps to a nearby text or image side and attaches to it; a free end
+                // snaps to nearly horizontal, vertical or 45° lines.
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     let origin = background.ctx.input(|i| i.pointer.press_origin());
                     let snap = origin.and_then(|o| self.snap(o, &to_screen_pos));
@@ -511,8 +512,8 @@ impl DeerawApp {
                     (background.dragged_by(PointerButton::Primary), pointer, background.interact_pointer_pos())
                 {
                     let snap = self.snap(screen, &to_screen_pos);
-                    if let Some(Drawing::Arrow(_, end, bindings)) = &mut self.drawing {
-                        *end = snap.map_or(p, |(_, anchor)| anchor);
+                    if let Some(Drawing::Arrow(start, end, bindings)) = &mut self.drawing {
+                        *end = snap.map_or(snap_angle(*start, p), |(_, anchor)| anchor);
                         bindings[1] = snap.map(|(b, _)| b);
                     }
                 }

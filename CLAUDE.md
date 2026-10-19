@@ -90,6 +90,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      current arrow style, and selects it (`connect_ui` in `snap.rs`, registered after the objects so the
      press doesn't move them, before the selection handles so those still win).
    - Line: like Arrow but without a head (same object kind, `heads: None`); stays in Line mode.
+   - Angle snapping (arrows and lines): a free end (not attached), while drawing or dragging its
+     handle, snaps onto the horizontal, vertical or 45° line through the other end when within
+     `ANGLE_SNAP_DEGREES` (2°) of it (`snap_angle` in geometry.rs, projected so its length along that line stays).
    - Shape (S): drag corner to corner to draw a rectangle, ellipse or diamond (`Kind::Shape`, picked in
      the style panel; the toolbar button shows the current one); Shift makes it a square/circle. Outline
      only by default (`fill: None`, shared with text boxes' fill); an unfilled shape is grabbed only

@@ -3,6 +3,7 @@
 use eframe::egui::{self, Color32, CursorIcon, Painter, PointerButton, Pos2, Rect, Sense, Stroke, Vec2};
 
 use super::{DeerawApp, Drawing, SELECTION_COLOR};
+use crate::geometry::snap_angle;
 use crate::object::{Binding, Kind, Side, anchor};
 
 /// An object's snap circles show while the pointer is this close to its border, in points.
@@ -84,8 +85,8 @@ impl DeerawApp {
             }
             if let (true, Some(screen)) = (response.dragged_by(PointerButton::Primary), response.interact_pointer_pos()) {
                 let snap = self.snap(screen, &to_screen_pos);
-                if let Some(Drawing::Arrow(_, end, bindings)) = &mut self.drawing {
-                    *end = snap.map_or(to_canvas(screen), |(_, anchor)| anchor);
+                if let Some(Drawing::Arrow(start, end, bindings)) = &mut self.drawing {
+                    *end = snap.map_or(snap_angle(*start, to_canvas(screen)), |(_, anchor)| anchor);
                     bindings[1] = snap.map(|(b, _)| b);
                 }
             }

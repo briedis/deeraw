@@ -14,6 +14,26 @@ pub fn pan_for_zoom(pan: Vec2, anchor: Vec2, old_scale: f32, new_scale: f32) -> 
     anchor - canvas_point * new_scale
 }
 
+/// A free (unattached) line or arrow end within this many degrees of horizontal, vertical or
+/// 45° snaps onto it.
+pub const ANGLE_SNAP_DEGREES: f32 = 2.0;
+
+/// `end`, moved onto the nearest horizontal, vertical or 45° line through `start` if the line
+/// `start`-`end` is within `ANGLE_SNAP_DEGREES` of it (keeping its length along that line).
+pub fn snap_angle(start: Pos2, end: Pos2) -> Pos2 {
+    let along = end - start;
+    if along == Vec2::ZERO {
+        return end;
+    }
+    let step = std::f32::consts::FRAC_PI_4;
+    let snapped = (along.angle() / step).round() * step;
+    if (along.angle() - snapped).abs() > ANGLE_SNAP_DEGREES.to_radians() {
+        return end;
+    }
+    let dir = Vec2::angled(snapped);
+    start + dir * along.dot(dir)
+}
+
 /// Distance from `p` to the line segment `a`-`b`.
 pub fn distance_to_segment(p: Pos2, a: Pos2, b: Pos2) -> f32 {
     let ab = b - a;
@@ -200,5 +220,21 @@ mod tests {
         let (r, points) = normalize(&[Pos2::new(10.0, 20.0), Pos2::new(110.0, 20.0)]);
         assert_eq!(r, rect(10.0, 18.0, 110.0, 22.0));
         assert_eq!(points, vec![Pos2::new(0.0, 0.5), Pos2::new(1.0, 0.5)]);
+    }
+
+    #[test]
+    fn lines_snap_to_nearby_45_degree_angles() {
+        let start = Pos2::new(10.0, 10.0);
+        let at = |degrees: f32| start + Vec2::angled(degrees.to_radians()) * 100.0;
+        // 1.5° off horizontal: snapped, same length along the line.
+        let snapped = snap_angle(start, at(1.5));
+        assert!((snapped.y - 10.0).abs() < 1e-3 && (snapped.x - (10.0 + 100.0 * 1.5f32.to_radians().cos())).abs() < 1e-3);
+        // Off 45° (down-right), up and left too.
+        let snapped = snap_angle(start, at(46.5)) - start;
+        assert!((snapped.x - snapped.y).abs() < 1e-3);
+        assert!((snap_angle(start, start + Vec2::new(2.0, -100.0)).x - 10.0).abs() < 1e-3);
+        assert!((snap_angle(start, start + Vec2::new(-100.0, 2.0)).y - 10.0).abs() < 1e-3);
+        // 3° off: left alone.
+        assert_eq!(snap_angle(start, at(3.0)), at(3.0));
     }
 }

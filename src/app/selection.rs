@@ -3,7 +3,7 @@
 use eframe::egui::{self, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
 use super::{DeerawApp, MIN_TEXT_BOX, ResizeDrag, SELECTION_COLOR, Tool};
-use crate::geometry::{crop_uv, resize_to, uncropped_rect};
+use crate::geometry::{crop_uv, resize_to, snap_angle, uncropped_rect};
 use crate::object::{Kind, Object};
 
 /// Size of a resize handle, in points.
@@ -36,7 +36,8 @@ impl DeerawApp {
         }
         if let Kind::Arrow { start, end, mut bindings, .. } = obj.kind {
             // Arrows get a handle per endpoint instead of a resize box. A dragged endpoint
-            // snaps to a nearby text or image side and attaches to it, or detaches.
+            // snaps to a nearby text or image side and attaches to it, or detaches; a free end
+            // snaps to nearly horizontal, vertical or 45° lines from the other end.
             let arrow = obj.id;
             let mut points = [start, end];
             let mut dragging = None;
@@ -52,7 +53,8 @@ impl DeerawApp {
                     *raw += response.drag_delta() / scale;
                     let raw = *raw;
                     let snap = self.snap(to_screen_pos(raw), &to_screen_pos);
-                    *point = snap.map_or(raw, |(_, anchor)| anchor);
+                    let other = [start, end][1 - i];
+                    *point = snap.map_or(snap_angle(other, raw), |(_, anchor)| anchor);
                     bindings[i] = snap.map(|(b, _)| b);
                     dragging = Some(to_screen_pos(raw));
                 }
