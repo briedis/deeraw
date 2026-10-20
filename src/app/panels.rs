@@ -624,6 +624,18 @@ impl DeerawApp {
                             }
                         }
                         ui.separator();
+                        // Disabled (faded) when there's nothing to undo or redo.
+                        let shortcut = |key| ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));
+                        let (undo_hint, redo_hint) = (format!("Undo ({})", shortcut(egui::Key::Z)), format!("Redo ({})", shortcut(egui::Key::Y)));
+                        let can_undo = self.history.can_undo();
+                        if ui.add_enabled_ui(can_undo, |ui| icon_button(ui, false, Icon::Undo, TOOLBAR_ICON_SIZE, &undo_hint)).inner {
+                            self.history.undo(&mut self.objects);
+                        }
+                        let can_redo = self.history.can_redo();
+                        if ui.add_enabled_ui(can_redo, |ui| icon_button(ui, false, Icon::Redo, TOOLBAR_ICON_SIZE, &redo_hint)).inner {
+                            self.history.redo(&mut self.objects);
+                        }
+                        ui.separator();
                         self.background_button(ui);
                         self.zoom_indicator(ui, canvas_rect, ppp);
                     });

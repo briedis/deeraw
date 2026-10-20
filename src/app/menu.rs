@@ -30,10 +30,10 @@ impl DeerawApp {
                 }
             });
             ui.menu_button("Edit", |ui| {
-                if menu_item(ui, "Undo", command(Key::Z), true) {
+                if menu_item(ui, "Undo", command(Key::Z), self.history.can_undo()) {
                     self.history.undo(&mut self.objects);
                 }
-                if menu_item(ui, "Redo", command(Key::Y), true) {
+                if menu_item(ui, "Redo", command(Key::Y), self.history.can_redo()) {
                     self.history.redo(&mut self.objects);
                 }
                 ui.separator();

@@ -42,6 +42,14 @@ impl History {
     pub fn redo(&mut self, objects: &mut Vec<Object>) {
         Self::step(&mut self.redo, &mut self.undo, &mut self.saved, objects);
     }
+
+    pub fn can_undo(&self) -> bool {
+        !self.undo.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo.is_empty()
+    }
 }
 
 
@@ -74,6 +82,7 @@ mod tests {
         history.undo(&mut objects);
         assert_eq!(ids(&objects), []);
         history.undo(&mut objects); // nothing left
+        assert!(!history.can_undo() && history.can_redo());
         assert_eq!(ids(&objects), []);
         history.redo(&mut objects);
         assert_eq!(ids(&objects), [1]);
