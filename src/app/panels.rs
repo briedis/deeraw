@@ -589,9 +589,13 @@ impl DeerawApp {
                 ui.set_visuals(canvas_ui_visuals(self.background));
                 egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        #[cfg(target_os = "macos")]
+                        #[cfg(any(target_os = "macos", windows))]
                         {
-                            let hint = "Screenshot: drag over part of the screen to add it (Space picks a window, Escape cancels)";
+                            let hint = if cfg!(target_os = "macos") {
+                                "Screenshot: drag over part of the screen to add it (Space picks a window, Escape cancels)"
+                            } else {
+                                "Screenshot: drag over part of the screen to add it (Escape cancels)"
+                            };
                             if icon_button(ui, self.screenshot.is_some(), Icon::Screenshot, TOOLBAR_ICON_SIZE, hint) {
                                 self.start_screenshot(ui.ctx());
                             }

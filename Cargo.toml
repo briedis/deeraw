@@ -27,6 +27,12 @@ dispatch2 = "0.3.1"
 objc2 = "0.6.3"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
 
+# The Screenshot button on Windows: Snipping Tool's area selection, read back from the clipboard;
+# both already in eframe's tree.
+[target.'cfg(windows)'.dependencies]
+arboard = { version = "3.7.0", default-features = false, features = ["image-data"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_DataExchange", "Win32_System_Threading", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+
 [build-dependencies]
 winresource = "0.1"
 

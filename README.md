@@ -10,7 +10,8 @@
 
 - **Paste & annotate**: paste or open an image, then draw on top of it. The window fits itself to the first image.
   Pasted text becomes a text object.
-- **Screenshot** (macOS): drag over part of the screen and it lands on the canvas, ready to annotate.
+- **Screenshot** (macOS and Windows): drag over part of the screen and it lands on the canvas, ready to annotate.
+  On Windows it uses Snipping Tool's area selection, so the capture is also left on the clipboard.
 - **Tools**: pencil (plain or hand-drawn, speed-sensitive strokes), arrows and lines (with angle snapping),
   rectangles, ellipses and diamonds (outlined, filled or both), blur (pixelates part of an image, safe for hiding
   things in screenshots) and text.

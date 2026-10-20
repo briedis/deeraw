@@ -5,7 +5,7 @@ mod canvas;
 mod files;
 mod menu;
 mod panels;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 mod screenshot;
 mod selection;
 mod snap;
@@ -30,7 +30,7 @@ const MAX_ZOOM_LEVEL: i32 = 20;
 /// How far Ctrl+D copies are moved from the original, in canvas pixels.
 const DUPLICATE_OFFSET: f32 = 20.0;
 /// How many frames `--screenshot` waits for the window to become key.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", windows))]
 const SCREENSHOT_START_FRAMES: u64 = 300;
 /// Key of `Settings` in eframe's storage.
 const SETTINGS_KEY: &str = "settings";
@@ -145,11 +145,11 @@ pub struct DeerawApp {
     /// Started with `--paste` (by the macOS menu bar launcher): paste the clipboard on the first frame.
     paste_on_start: bool,
     /// A screenshot being taken (`screenshot.rs`): its image, or `None` if cancelled, arrives here.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     screenshot: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
     /// Started with `--screenshot` (by the launcher, when the clipboard has no recent image):
     /// start a screenshot once the window is up.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     screenshot_on_start: bool,
     /// Frame of that paste, which places only an image: text left on the clipboard isn't meant
     /// for the new drawing.
@@ -193,7 +193,7 @@ impl DeerawApp {
             background,
             save_dir,
             paste_on_start,
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", windows))]
             screenshot_on_start: std::env::args().any(|a| a == "--screenshot"),
             ..Default::default()
         }
@@ -216,7 +216,7 @@ impl eframe::App for DeerawApp {
             self.start_paste_frame = self.menu_paste_frame;
             ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", windows))]
         {
             // Retried until the window is up (it isn't key on the first frames); given up after
             // a while, e.g. if another app was clicked meanwhile.
