@@ -104,6 +104,7 @@ impl DeerawApp {
                         };
                         if let Some(tool) = tool {
                             self.tool = tool;
+                            self.blur_from_select = false;
                             // Escape (or any tool switch) also cancels a half-drawn shape.
                             self.drawing = None;
                             self.marquee = None;
@@ -191,8 +192,12 @@ impl DeerawApp {
                 _ => true,
             };
             let is_blur = matches!(obj.kind, Kind::Blur { .. });
-            if (selecting || blurring && is_blur) && !editing && hit {
-                let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, Sense::click_and_drag());
+            // Back from a picked blur, other objects take clicks (back to Select), but drags still
+            // reach the background to draw a blur.
+            let click_only = blurring && !is_blur && self.blur_from_select;
+            if (selecting || blurring && is_blur || click_only) && !editing && hit {
+                let sense = if click_only { Sense::click() } else { Sense::click_and_drag() };
+                let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, sense);
                 if response.clicked() {
                     clicked = Some(obj.id);
                 }
@@ -207,6 +212,10 @@ impl DeerawApp {
                 // Picking a blur with Select switches to the Blur tool, which then edits it.
                 if is_blur && selecting && (response.clicked() || response.drag_started_by(PointerButton::Primary)) {
                     self.tool = Tool::Blur;
+                    self.blur_from_select = true;
+                }
+                if click_only && response.clicked() {
+                    self.tool = Tool::Select;
                 }
                 if response.double_clicked() {
                     match obj.kind {

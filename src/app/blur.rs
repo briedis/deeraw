@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, PointerButton, Pos2, Rect};
 
-use super::{DeerawApp, Drawing, Notice};
+use super::{DeerawApp, Drawing, Notice, Tool};
 use crate::geometry::{MIN_SIZE, crop_uv, uncropped_rect};
 use crate::mosaic::{load_mosaics, source_block};
 use crate::object::{Kind, Object};
@@ -11,15 +11,20 @@ impl DeerawApp {
     /// Drag a box over (part of) an image to blur that part of it. It can start outside: it
     /// blurs the first image the box touches (the topmost, if it touches several at once).
     /// A box that never touches an image just says so.
-    /// Existing blurs can be selected, moved and resized as with Select; clicking elsewhere deselects.
+    /// Existing blurs can be selected, moved and resized as with Select; clicking elsewhere deselects
+    /// (and goes back to Select if a blur was picked with it; starting a new blur keeps the tool).
     pub(super) fn blur_tool(&mut self, background: &egui::Response, to_canvas: impl Fn(Pos2) -> Pos2) {
         if background.clicked() {
             self.selected.clear();
+            if self.blur_from_select {
+                self.tool = Tool::Select;
+            }
         }
         let pointer = background.interact_pointer_pos().map(&to_canvas);
         if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
             let origin = background.ctx.input(|i| i.pointer.press_origin()).map_or(p, &to_canvas);
             self.drawing = Some(Drawing::Blur(None, origin, p));
+            self.blur_from_select = false;
         }
         if let (true, Some(p), Some(Drawing::Blur(image, start, end))) =
             (background.dragged_by(PointerButton::Primary), pointer, &mut self.drawing)

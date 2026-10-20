@@ -105,6 +105,9 @@ pub struct DeerawApp {
     marquee: Option<(Pos2, Pos2)>,
     next_id: u64,
     tool: Tool,
+    /// The Blur tool was switched to by picking a blur with Select: clicking anything but a blur
+    /// goes back to Select, until a new blur is started.
+    blur_from_select: bool,
     drawing: Option<Drawing>,
     resize_drag: Option<ResizeDrag>,
     /// Where the arrow endpoint being dragged would be without snapping, canvas pixels.

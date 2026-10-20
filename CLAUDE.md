@@ -149,7 +149,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      right above its image, so annotations stay on top. Deleting or cutting an image takes its blurs
      along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely. Picking a blur with
      Select (click or drag) switches to the Blur tool, which also selects, moves and resizes blurs (only
-     blurs; clicking elsewhere deselects) and restyles the selected ones. While cropping, the image shows unblurred (on screen only).
+     blurs; clicking elsewhere deselects) and restyles the selected ones. Switched to that way, clicking
+     anything but a blur goes back to Select (selecting what was clicked; `blur_from_select`) until a
+     new blur is dragged out; chosen with B or the toolbar, it stays. While cropping, the image shows unblurred (on screen only).
    - Text: two modes, both with an alignment and a background (`align`, `fill` on `Kind::Text`; picked in the
      style panel; background transparent by default, or a palette color). Click to place auto-width text:
      one line per Enter, the lines aligned left/center/right by the alignment's x; its rect is the text

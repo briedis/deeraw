@@ -614,6 +614,7 @@ impl DeerawApp {
                             let button = ui.scope(|ui| icon_button(ui, self.tool == tool, icon, TOOLBAR_ICON_SIZE, hint));
                             if button.inner {
                                 self.tool = tool;
+                                self.blur_from_select = false;
                             }
                             centers.push((tool, button.response.rect.center()));
                         }
