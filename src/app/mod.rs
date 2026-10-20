@@ -29,6 +29,9 @@ const MIN_ZOOM_LEVEL: i32 = -4;
 const MAX_ZOOM_LEVEL: i32 = 20;
 /// How far Ctrl+D copies are moved from the original, in canvas pixels.
 const DUPLICATE_OFFSET: f32 = 20.0;
+/// How many frames `--screenshot` waits for the window to become key.
+#[cfg(target_os = "macos")]
+const SCREENSHOT_START_FRAMES: u64 = 300;
 /// Key of `Settings` in eframe's storage.
 const SETTINGS_KEY: &str = "settings";
 
@@ -144,6 +147,10 @@ pub struct DeerawApp {
     /// A screenshot being taken (`screenshot.rs`): its image, or `None` if cancelled, arrives here.
     #[cfg(target_os = "macos")]
     screenshot: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
+    /// Started with `--screenshot` (by the launcher, when the clipboard has no recent image):
+    /// start a screenshot once the window is up.
+    #[cfg(target_os = "macos")]
+    screenshot_on_start: bool,
     /// Frame of that paste, which places only an image: text left on the clipboard isn't meant
     /// for the new drawing.
     start_paste_frame: Option<u64>,
@@ -181,7 +188,15 @@ impl DeerawApp {
         let Settings { style, background, save_dir } =
             storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
         let paste_on_start = std::env::args().any(|a| a == "--paste");
-        Self { style, background, save_dir, paste_on_start, ..Default::default() }
+        Self {
+            style,
+            background,
+            save_dir,
+            paste_on_start,
+            #[cfg(target_os = "macos")]
+            screenshot_on_start: std::env::args().any(|a| a == "--screenshot"),
+            ..Default::default()
+        }
     }
 }
 
@@ -202,7 +217,16 @@ impl eframe::App for DeerawApp {
             ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         #[cfg(target_os = "macos")]
-        self.finish_screenshot();
+        {
+            // Retried until the window is up (it isn't key on the first frames); given up after
+            // a while, e.g. if another app was clicked meanwhile.
+            if self.screenshot_on_start {
+                let started = self.start_screenshot(ui.ctx());
+                self.screenshot_on_start = !started && ui.ctx().cumulative_frame_nr() < SCREENSHOT_START_FRAMES;
+                ui.ctx().request_repaint();
+            }
+            self.finish_screenshot();
+        }
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.show_layers {
             egui::Panel::left("layers")

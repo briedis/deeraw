@@ -289,7 +289,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` + `Deeraw Launcher.app` zip) on every push/PR; a `v*` tag publishes a release.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit.
-  It passes `--paste`, so a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
+  It passes `--paste` when the clipboard has an image copied in the last 5 minutes (macOS has no clipboard
+  time, so the launcher polls `NSPasteboard.changeCount` every second and notes when it changed; changes from before
+  it started count as old), else `--screenshot`, which makes Deeraw start a screenshot once its window is key
+  (`screenshot_on_start`, retried for up to `SCREENSHOT_START_FRAMES`). With `--paste`, a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
   (`paste_on_start`; text on the clipboard is ignored then, `start_paste_frame`, so only an image is placed). A running Deeraw gets
   no arguments from macOS and is just brought to the front. It
   registers itself as a login item (`SMAppService`, needs it in `/Applications`). `build.sh [out_dir] [icns]`

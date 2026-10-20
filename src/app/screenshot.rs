@@ -18,14 +18,15 @@ use objc2_app_kit::NSApplication;
 use super::DeerawApp;
 
 impl DeerawApp {
-    /// Hides the window and starts the system's area selection on another thread.
-    pub(super) fn start_screenshot(&mut self, ctx: &egui::Context) {
+    /// Hides the window and starts the system's area selection on another thread. False if
+    /// there's no key window yet (just after starting).
+    pub(super) fn start_screenshot(&mut self, ctx: &egui::Context) -> bool {
         if self.screenshot.is_some() {
-            return;
+            return true;
         }
         // `ui` runs on the main thread.
-        let Some(mtm) = MainThreadMarker::new() else { return };
-        let Some(window) = NSApplication::sharedApplication(mtm).keyWindow() else { return };
+        let Some(mtm) = MainThreadMarker::new() else { return false };
+        let Some(window) = NSApplication::sharedApplication(mtm).keyWindow() else { return false };
         let number = window.windowNumber();
         window.orderOut(None);
         let (sender, receiver) = mpsc::channel();
@@ -42,6 +43,7 @@ impl DeerawApp {
             let _ = sender.send(image);
             ctx.request_repaint();
         });
+        true
     }
 
     /// Once the selection is done (or cancelled), hands the capture to `canvas`.
