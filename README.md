@@ -9,22 +9,77 @@
 ## Features
 
 - **Paste & annotate**: paste or open an image, then draw on top of it. The window fits itself to the first image.
-- **Tools**: pencil (plain or hand-drawn, speed-sensitive strokes), arrows, lines and text (single-line or wrapping text boxes with alignment and a background).
-- **Edit**: select, multi-select, move, resize, duplicate, non-destructive image crop, and undo/redo.
-- **Style**: colors, line widths and font sizes; white, black or transparent canvas.
-- **Pan & zoom** with the mouse wheel and middle button.
-- **Export**: Ctrl+C copies the drawing as a PNG cropped to its content, and Ctrl+S saves it to a file.
+  Pasted text becomes a text object.
+- **Screenshot** (macOS): drag over part of the screen and it lands on the canvas, ready to annotate.
+- **Tools**: pencil (plain or hand-drawn, speed-sensitive strokes), arrows and lines (with angle snapping),
+  rectangles, ellipses and diamonds (outlined, filled or both), blur (pixelates part of an image, safe for hiding
+  things in screenshots) and text.
+- **Text**: single-line or wrapping text boxes with alignment and a background, and basic markdown:
+  `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``, headings and lists.
+- **Arrows that connect**: arrow ends attach to images, text and shapes and follow them when they move.
+- **Edit**: select, multi-select, move, resize, duplicate, non-destructive image crop, alignment guides that snap
+  centers together, and undo/redo.
+- **Style**: colors, line widths and font sizes; white, black or transparent canvas. The last style is remembered.
+- **Pan & zoom** with the mouse wheel, middle button or Space + drag.
+- **Export**: Ctrl+C copies the drawing as a PNG cropped to its content, Ctrl+X copies just the selection, and
+  Ctrl+S saves to a file.
 
-## Download
+Ctrl means Cmd on macOS.
 
-Windows and macOS builds are on the [Releases](https://github.com/briedis/deeraw/releases) page.
-The macOS app is unsigned, so right-click it and choose **Open** the first time.
+## Install
+
+### macOS
+
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask briedis/tap/deeraw
+```
+
+`brew upgrade` updates it later. This installs two apps into `/Applications`:
+
+- **Deeraw**, the app itself.
+- **Deeraw Launcher**, a deer in the menu bar that starts at login. Click it to open Deeraw: it pastes the
+  clipboard's image if you copied one in the last 5 minutes, otherwise it starts a screenshot. Right click for
+  its menu (Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
+
+Without Homebrew: download `deeraw-macos-universal.zip` from [Releases](https://github.com/briedis/deeraw/releases),
+unzip it and move both apps to `/Applications`. The apps aren't notarized by Apple, so macOS blocks them at first:
+open one, then allow it under System Settings → Privacy & Security → **Open Anyway** (or run
+`xattr -dr com.apple.quarantine /Applications/Deeraw*.app`).
+
+The Screenshot button needs the Screen Recording permission; macOS asks for it the first time.
+
+### Windows
+
+Download `deeraw-windows-x64.zip` from [Releases](https://github.com/briedis/deeraw/releases), unzip it anywhere and
+run `deeraw.exe`. Windows SmartScreen may warn about an unknown publisher: choose **More info** → **Run anyway**.
 
 ## Build
 
 ```sh
 cargo run --release
 ```
+
+For the web build, install [Trunk](https://trunkrs.dev) and the `wasm32-unknown-unknown` target, then run
+`trunk serve --release`.
+
+## Releases
+
+Every push builds Windows and macOS on GitHub Actions (`.github/workflows/build.yml`). To publish a release:
+
+1. Bump `version` in `Cargo.toml` (the macOS app's version comes from it) and commit.
+2. Tag it with an annotated tag and push both:
+   ```sh
+   git tag -a v0.4.0 -m "Deeraw 0.4.0"
+   git push && git push origin v0.4.0
+   ```
+   The tag's build publishes a GitHub release with both zips.
+3. Update the Homebrew cask in [briedis/homebrew-tap](https://github.com/briedis/homebrew-tap)
+   (`Casks/deeraw.rb`): set `version` and `sha256`, which you get with
+   ```sh
+   curl -sL https://github.com/briedis/deeraw/releases/download/v0.4.0/deeraw-macos-universal.zip | shasum -a 256
+   ```
 
 ## License
 
