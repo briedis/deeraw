@@ -287,6 +287,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   `Error: Wgpu(RequestDeviceError(... Device(Lost)))` and no window.
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` + `Deeraw Launcher.app` zip) on every push/PR; a `v*` tag publishes a release.
+- Homebrew: `brew install --cask briedis/tap/deeraw`, from the tap repo https://github.com/briedis/homebrew-tap
+  (`Casks/deeraw.rb`, installs both apps from the release's macOS zip and strips their quarantine flag, since
+  they're only ad-hoc signed; homebrew/cask itself requires notarized apps). After each release, bump `version`
+  and `sha256` there by hand (`shasum -a 256` of `deeraw-macos-universal.zip`). Release steps: bump `version` in
+  Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must be annotated here), push the tag.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit.
   It passes `--paste` when the clipboard has an image copied in the last 5 minutes (macOS has no clipboard
