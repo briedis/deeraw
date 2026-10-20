@@ -6,6 +6,7 @@ use super::snap::ALIGN_DISTANCE;
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
+use crate::markdown::toggle_marker;
 use crate::geometry::{MIN_SIZE, align_candidates, align_guides, align_offset, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
 use crate::object::{ArrowHeads, Kind};
 use crate::paint::{layout_text, paint_arrow, paint_row_fills, text_padding, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
@@ -158,7 +159,7 @@ impl DeerawApp {
             if let Kind::Text { text, font_px, color, align, frame, .. } = &obj.kind {
                 // Keep the rect in sync with the text layout. Measured at a fixed scale (1 point
                 // per canvas pixel) so zooming doesn't change it.
-                let galley = layout_text(&painter, text, *font_px, *color, *align, *frame);
+                let galley = layout_text(&painter, text, *font_px, *color, *align, *frame, editing);
                 let size = match frame {
                     Some(frame) => Vec2::new(frame.x, frame.y.max(galley.size().y)),
                     None => galley.size() + 2.0 * text_padding(*font_px),
@@ -635,11 +636,32 @@ impl DeerawApp {
             return;
         };
         let font = FontId::proportional(*font_px * scale);
+        let edit_id = egui::Id::unique(("text-edit", id));
+        // Ctrl+B and Ctrl+I wrap the selected text in bold or italic markers (or unwrap it).
+        let marker = ui.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::COMMAND, egui::Key::B) {
+                Some("**")
+            } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::I) {
+                Some("*")
+            } else {
+                None
+            }
+        });
+        if let Some(marker) = marker
+            && let Some(mut state) = egui::TextEdit::load_state(ui.ctx(), edit_id)
+            && let Some(range) = state.cursor.char_range()
+        {
+            let [start, end] = range.sorted_cursors();
+            let (start, end) = toggle_marker(text, start.index.0, end.index.0, marker);
+            let range = egui::text_selection::CCursorRange::two(egui::text::CCursor::new(start), egui::text::CCursor::new(end));
+            state.cursor.set_char_range(Some(range));
+            state.store(ui.ctx(), edit_id);
+        }
         // Lay out exactly like `layout_text` (egui would otherwise wrap at the available width).
         let screen_frame = frame.map(|f| f * scale);
         let (color, text_align, fill) = (*color, *align, *fill);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _: f32| {
-            let mut job = text_layout_job(buf.as_str(), font.clone(), color, text_align, screen_frame);
+            let mut job = text_layout_job(buf.as_str(), *font_px * scale, color, text_align, screen_frame, true);
             job.keep_trailing_whitespace = true;
             ui.fonts_mut(|f| f.layout_job(job))
         };
@@ -663,7 +685,7 @@ impl DeerawApp {
             None => to_screen_pos(obj.rect.min) + text_padding(*font_px * scale),
         };
         if let (None, Some(fill)) = (screen_frame, fill) {
-            let galley = layout_text(ui.painter(), text, *font_px * scale, color, text_align, None);
+            let galley = layout_text(ui.painter(), text, *font_px * scale, color, text_align, None, true);
             let pos = editor_pos - Vec2::new(galley.rect.left(), 0.0);
             paint_row_fills(ui.painter(), &galley, pos, *font_px * scale, fill);
         }
@@ -675,6 +697,7 @@ impl DeerawApp {
                 // shows on every background.
                 ui.visuals_mut().text_cursor.stroke = Stroke::new(2.0, SELECTION_COLOR);
                 egui::TextEdit::multiline(text)
+                    .id(edit_id)
                     .font(font.clone())
                     .layouter(&mut layouter)
                     .frame(egui::Frame::NONE)

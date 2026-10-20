@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
+use eframe::egui::{self, Align2, Color32, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
 
+use crate::markdown;
 use crate::geometry::{crop_uv, diamond, uncropped_rect};
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Object, Shape};
 use crate::stroke::{paint_hand_drawn, paint_plain};
@@ -50,7 +51,7 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
         }
         Kind::Text { text, font_px, color, align, fill, frame } => {
             let frame = frame.map(|f| f * scale);
-            let galley = layout_text(painter, text, font_px * scale, *color, *align, frame);
+            let galley = layout_text(painter, text, font_px * scale, *color, *align, frame, false);
             // Same placement as `TextEdit` uses, so editing doesn't shift the text.
             let (align, rect) = if frame.is_some() { (*align, rect) } else { (Align2::LEFT_TOP, rect.shrink2(text_padding(font_px * scale))) };
             let pos = align.align_size_within_rect(galley.size(), rect).min - Vec2::new(galley.rect.left(), 0.0);
@@ -86,16 +87,16 @@ pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, strength: Blu
 }
 
 /// Lays out a text object's text. `font_px` and `frame` (the box size) are in the same unit
-/// (canvas pixels for measuring, screen points for painting).
-pub fn layout_text(painter: &Painter, text: &str, font_px: f32, color: Color32, align: Align2, frame: Option<Vec2>) -> Arc<egui::Galley> {
-    painter.layout_job(text_layout_job(text, FontId::proportional(font_px), color, align, frame))
+/// (canvas pixels for measuring, screen points for painting). `editing` shows the markdown markup.
+pub fn layout_text(painter: &Painter, text: &str, font_px: f32, color: Color32, align: Align2, frame: Option<Vec2>, editing: bool) -> Arc<egui::Galley> {
+    painter.layout_job(text_layout_job(text, font_px, color, align, frame, editing))
 }
 
-/// Plain text doesn't wrap; a text box wraps at its width. Either way the rows are aligned
-/// horizontally by `align`.
-pub fn text_layout_job(text: &str, font: FontId, color: Color32, align: Align2, frame: Option<Vec2>) -> egui::text::LayoutJob {
-    let wrap = frame.map_or(f32::INFINITY, |f| f.x);
-    let mut job = egui::text::LayoutJob::simple(text.to_owned(), font, color, wrap);
+/// Text with its markdown formatting. Plain text doesn't wrap; a text box wraps at its width.
+/// Either way the rows are aligned horizontally by `align`.
+pub fn text_layout_job(text: &str, font_px: f32, color: Color32, align: Align2, frame: Option<Vec2>, editing: bool) -> egui::text::LayoutJob {
+    let mut job = markdown::layout_job(text, font_px, color, editing);
+    job.wrap.max_width = frame.map_or(f32::INFINITY, |f| f.x);
     job.halign = align.x();
     job
 }

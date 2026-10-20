@@ -6,6 +6,7 @@ mod cursor;
 mod export;
 mod geometry;
 mod history;
+mod markdown;
 mod mosaic;
 mod object;
 mod paint;
@@ -82,6 +83,7 @@ fn install_crash_report() {
 fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
     // Ctrl +/- zooms the canvas, not the whole UI.
     cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+    markdown::install_fonts(&cc.egui_ctx);
     Box::new(DeerawApp::new(cc.storage))
 }
 
