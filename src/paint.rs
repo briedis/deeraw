@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use eframe::egui::{self, Align2, Color32, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::Rot2, epaint::PathShape};
+use eframe::egui::{self, Align2, Color32, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2, emath::GuiRounding, emath::Rot2, epaint::PathShape};
 
 use crate::markdown;
 use crate::geometry::{crop_uv, diamond, uncropped_rect};
@@ -23,11 +23,17 @@ pub fn text_padding(font_px: f32) -> Vec2 {
 /// Angle between an arrow's line and each side of its head, in radians.
 const ARROW_HEAD_SPREAD: f32 = 0.45;
 
+/// Moves `screen` (an image's place on screen) onto whole physical pixels: images are sampled
+/// linearly, so one between pixels blends each pixel with its neighbour and looks blurry at 100%.
+pub fn snap_to_pixels(painter: &Painter, screen: Rect) -> Rect {
+    screen.translate(screen.min.round_to_pixels(painter.pixels_per_point()) - screen.min)
+}
+
 /// `objects` are all the objects being painted, where a blur finds its image.
 pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: Rect, to_screen_pos: impl Fn(Pos2) -> Pos2, scale: f32) {
     match &obj.kind {
         Kind::Image { texture, uv, .. } => {
-            painter.image(texture.id(), rect, *uv, Color32::WHITE);
+            painter.image(texture.id(), snap_to_pixels(painter, rect), *uv, Color32::WHITE);
         }
         Kind::Blur { image, strength, .. } => {
             if let Some(image) = objects.iter().find(|o| o.id == *image) {
@@ -83,7 +89,10 @@ pub fn paint_mosaic(painter: &Painter, image: &Object, area: Rect, strength: Blu
     let covered = Vec2::new(w as f32 / (mw * block) as f32, h as f32 / (mh * block) as f32);
     let image_uv = crop_uv(uncropped_rect(image.rect, *uv), visible);
     let mosaic_uv = Rect::from_min_max((image_uv.min.to_vec2() * covered).to_pos2(), (image_uv.max.to_vec2() * covered).to_pos2());
-    let screen = Rect::from_min_max(to_screen_pos(visible.min), to_screen_pos(visible.max));
+    // Moved along with the image (`snap_to_pixels`), so its blocks stay on the image's pixels.
+    let image_min = to_screen_pos(image.rect.min);
+    let snap = snap_to_pixels(painter, Rect::from_min_size(image_min, Vec2::ZERO)).min - image_min;
+    let screen = Rect::from_min_max(to_screen_pos(visible.min), to_screen_pos(visible.max)).translate(snap);
     painter.image(mosaic.id(), screen, mosaic_uv, Color32::WHITE);
 }
 

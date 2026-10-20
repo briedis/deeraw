@@ -181,6 +181,9 @@ pub enum Icon {
     Blur,
     Crop,
     StrokeWidth,
+    /// Corner brackets around a crosshair.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    Screenshot,
     /// A U-turn arrow pointing left.
     Undo,
     /// A U-turn arrow pointing right.
@@ -229,6 +232,14 @@ impl Icon {
                 (&[[5.0, 9.0], [27.0, 9.0]], false, 3.5),
                 (&[[5.0, 16.0], [27.0, 16.0]], false, 3.5),
                 (&[[5.0, 23.0], [27.0, 23.0]], false, 3.5),
+            ],
+            Icon::Screenshot => &[
+                (&[[4.0, 11.0], [4.0, 4.0], [11.0, 4.0]], false, W),
+                (&[[21.0, 4.0], [28.0, 4.0], [28.0, 11.0]], false, W),
+                (&[[28.0, 21.0], [28.0, 28.0], [21.0, 28.0]], false, W),
+                (&[[11.0, 28.0], [4.0, 28.0], [4.0, 21.0]], false, W),
+                (&[[16.0, 11.0], [16.0, 21.0]], false, W),
+                (&[[11.0, 16.0], [21.0, 16.0]], false, W),
             ],
             Icon::Undo => &[
                 (&[[10.0, 8.0], [5.0, 13.0], [10.0, 18.0]], false, W),

@@ -5,6 +5,7 @@ use eframe::egui::{self, Color32, CursorIcon, PointerButton, Pos2, Rect, Sense, 
 use super::{DeerawApp, MIN_TEXT_BOX, ResizeDrag, SELECTION_COLOR, Tool};
 use crate::geometry::{align_candidates, align_guides, centered_on, crop_uv, resize_to, snap_angle, uncropped_rect};
 use crate::object::{Kind, Object};
+use crate::paint::snap_to_pixels;
 
 /// Size of a resize handle, in points.
 const HANDLE_SIZE: f32 = 8.0;
@@ -181,8 +182,8 @@ impl DeerawApp {
         let full = uncropped_rect(*kept, *uv);
         let painter = ui.painter();
         let whole = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        painter.image(texture.id(), to_screen(full), whole, Color32::WHITE.gamma_multiply(0.35));
-        painter.image(texture.id(), to_screen(*kept), *uv, Color32::WHITE);
+        painter.image(texture.id(), snap_to_pixels(painter, to_screen(full)), whole, Color32::WHITE.gamma_multiply(0.35));
+        painter.image(texture.id(), snap_to_pixels(painter, to_screen(*kept)), *uv, Color32::WHITE);
         painter.rect_stroke(to_screen(full), 0.0, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
         painter.rect_stroke(to_screen(*kept), 0.0, Stroke::new(1.5, SELECTION_COLOR), StrokeKind::Outside);
 

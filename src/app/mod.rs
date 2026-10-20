@@ -5,6 +5,8 @@ mod canvas;
 mod files;
 mod menu;
 mod panels;
+#[cfg(target_os = "macos")]
+mod screenshot;
 mod selection;
 mod snap;
 
@@ -139,6 +141,9 @@ pub struct DeerawApp {
     menu_paste_frame: Option<u64>,
     /// Started with `--paste` (by the macOS menu bar launcher): paste the clipboard on the first frame.
     paste_on_start: bool,
+    /// A screenshot being taken (`screenshot.rs`): its image, or `None` if cancelled, arrives here.
+    #[cfg(target_os = "macos")]
+    screenshot: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
     /// Frame of that paste, which places only an image: text left on the clipboard isn't meant
     /// for the new drawing.
     start_paste_frame: Option<u64>,
@@ -196,6 +201,8 @@ impl eframe::App for DeerawApp {
             self.start_paste_frame = self.menu_paste_frame;
             ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
+        #[cfg(target_os = "macos")]
+        self.finish_screenshot();
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         if self.show_layers {
             egui::Panel::left("layers")

@@ -21,6 +21,12 @@ rfd = { version = "0.17.2", default-features = false }
 wasm-bindgen-futures = "0.4.79"
 web-sys = { version = "0.3.106", features = ["Document", "HtmlCanvasElement", "Window"] }
 
+# The Screenshot button hides and shows the window itself (`app/screenshot.rs`); all already in winit's tree.
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3.1"
+objc2 = "0.6.3"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+
 [build-dependencies]
 winresource = "0.1"
 

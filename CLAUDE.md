@@ -77,8 +77,13 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key) for Select, Pencil, Arrow, Line, Shape, Blur (a droplet), Text, plus Crop while exactly one image is selected; after a vertical separator, Undo and Redo (U-turn arrows,
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key): first (macOS only, then a separator) Screenshot, then Select, Pencil, Arrow, Line, Shape, Blur (a droplet), Text, plus Crop while exactly one image is selected; after a vertical separator, Undo and Redo (U-turn arrows,
    faded while there's nothing to undo/redo; the Edit menu items are disabled then too); after another, the canvas background (a single swatch that opens the others, like a style panel section) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
+   - Screenshot (macOS; `app/screenshot.rs`): orders the window out and runs `screencapture -i` on a thread (drag an
+     area, Space for a window, Escape cancels); the capture is placed like an opened image. The window is hidden and
+     shown through AppKit (`orderOut`, then `makeKeyAndOrderFront` on the main queue via dispatch2), not
+     `ViewportCommand::Visible`: eframe runs no frames for a hidden window, so it could never show itself again; and
+     hiding the app instead (Cmd+H style) loses activation, which macOS won't give back, so it returned behind other apps.
    Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, S Shape, B Blur, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
@@ -226,9 +231,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About) and `app/files.rs` (paste/open, fit window, save, export).
+  `app/menu.rs` (menu bar, About), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (macOS screen capture).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
-  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), png (already
+  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit (screenshot window handling; already in winit's tree), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping and PNG writing.
@@ -259,6 +264,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
 - An `Area` with a pivot other than LEFT_TOP is placed using last frame's size, so it's misplaced for a frame when its content resizes; `redo_frame_if_resized` (panels.rs) discards that frame (`ctx.request_discard`).
+- Images are painted with linear sampling, so their screen rect is moved onto whole physical pixels
+  (`snap_to_pixels` in paint.rs; blurs and the crop view follow); otherwise they look soft at 100%.
 - Clipboard needs no extra crates: egui-winit emits `Event::PasteImage` (when the clipboard has
   no text) and `ctx.copy_image()` writes PNG via arboard.
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
