@@ -181,7 +181,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (shown as a checkerboard), white (default) or black. Copy uses it as the PNG background; with
    transparent, the PNG has real alpha (the offscreen render clears to transparent).
    Each background has a default ink: black on white/transparent, white on black. Switching the
-   background while the drawing color is the old ink switches it to the new one (other colors
+   background while the drawing (or text) color is the old ink switches it to the new one (other colors
    are kept; existing objects are not recolored). Not in undo history.
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line, Shape or Text is active,
    or while a stroke, arrow, line, shape or text is selected. It shows the current color and size; clicking
@@ -192,7 +192,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
    The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
    With a drawing tool it sets the style of new objects; with a selection it restyles every
-   selected object that has that setting (undoable) and also becomes the default. A mixed
+   selected object that has that setting (undoable) and also becomes the default. Text has its own
+   color (`text_color`), separate from the one strokes, arrows, lines and shapes share; recoloring a
+   selection sets the default of each kind in it. A mixed
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width; an open head is one path so its point stays sharp when thick, and the line stops inside a solid head so its square end doesn't show.
 
 9. **Menu bar** — top of the window (`menu_bar`).

@@ -149,8 +149,10 @@ impl DeerawApp {
             if color_swatch(ui, self.background == background, name, background.color()) {
                 // Drawing with the old background's default ink switches to the new one's
                 // (black on black would be invisible); a picked color like red stays.
-                if self.style.color == self.background.ink() {
-                    self.style.color = background.ink();
+                for color in [&mut self.style.color, &mut self.style.text_color] {
+                    if *color == self.background.ink() {
+                        *color = background.ink();
+                    }
                 }
                 self.background = background;
                 clicked_any = true;
@@ -185,11 +187,18 @@ impl DeerawApp {
                 (!kinds.is_empty(), size_kinds)
             }
         };
+        // Text has its own default color. With Select, which defaults a picked color sets.
+        let is_text = |i: usize| matches!(self.objects[i].kind, Kind::Text { .. });
+        let (for_text, for_lines) = match self.tool {
+            Tool::Text => (true, false),
+            Tool::Select => (targets.iter().any(|&i| is_text(i)), targets.iter().any(|&i| !is_text(i))),
+            _ => (false, true),
+        };
         // Current values: the first selected object that has the setting, else the defaults.
         let color = targets
             .iter()
             .find_map(|&i| self.objects[i].color_mut().map(|c| *c))
-            .unwrap_or(self.style.color);
+            .unwrap_or(if for_lines { self.style.color } else { self.style.text_color });
         let sizes: Vec<(SizeKind, f32)> = size_kinds
             .iter()
             .map(|&kind| {
@@ -450,7 +459,12 @@ impl DeerawApp {
         }
         self.style_open = None;
         if let Some(color) = new_color {
-            self.style.color = color;
+            if for_lines {
+                self.style.color = color;
+            }
+            if for_text {
+                self.style.text_color = color;
+            }
             for &i in &targets {
                 if let Some(c) = self.objects[i].color_mut() {
                     *c = color;

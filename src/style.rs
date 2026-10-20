@@ -50,7 +50,10 @@ pub enum SizeKind {
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Style {
+    /// For strokes, arrows, lines and shapes.
     pub color: Color32,
+    /// For text, kept apart from `color` since text often sits on a background of its own.
+    pub text_color: Color32,
     pub line_width: f32,
     pub font_px: f32,
     /// For pencil strokes.
@@ -71,7 +74,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
+        Self { color: PALETTE[0].0, text_color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
     }
 }
 

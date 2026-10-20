@@ -328,6 +328,7 @@ mod tests {
     fn settings_survive_a_relaunch() {
         let mut app = DeerawApp::default();
         app.style.color = Color32::RED;
+        app.style.text_color = Color32::BLUE;
         app.style.line_width = 10.0;
         app.background = Background::Black;
         app.tool = Tool::Pencil;
@@ -335,7 +336,7 @@ mod tests {
         eframe::App::save(&mut app, &mut storage);
 
         let app = DeerawApp::new(Some(&storage));
-        assert_eq!((app.style.color, app.style.line_width, app.background), (Color32::RED, 10.0, Background::Black));
+        assert_eq!((app.style.color, app.style.text_color, app.style.line_width, app.background), (Color32::RED, Color32::BLUE, 10.0, Background::Black));
         assert_eq!(app.tool, Tool::Select);
     }
 

@@ -581,7 +581,7 @@ impl DeerawApp {
 
     /// Adds an empty text object (its text at `min`, or as the box `frame` there) and starts editing it.
     pub(super) fn start_text(&mut self, min: Pos2, frame: Option<Vec2>) {
-        let Style { font_px, color, align, fill, .. } = self.style;
+        let Style { font_px, text_color: color, align, fill, .. } = self.style;
         // Inline text: the text itself (inside the padding) starts at `min`.
         let min = if frame.is_none() { min - text_padding(font_px) } else { min };
         let rect = Rect::from_min_size(min, frame.unwrap_or(Vec2::splat(MIN_SIZE)));
