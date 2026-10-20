@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, pen_button, size_button};
+use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -54,8 +54,9 @@ impl DeerawApp {
                         let pen = if *hand_drawn { ", hand-drawn" } else { "" };
                         info += &format!("\n{} points, width {width:.0}px{pen}", points.len())
                     }
-                    Kind::Shape { width, fill, .. } => {
-                        info += &format!("\nwidth {width:.0}px, {}", fill_name(*fill));
+                    Kind::Shape { width, border, fill, .. } => {
+                        let border = if *border { format!("width {width:.0}px") } else { "no border".to_owned() };
+                        info += &format!("\n{border}, {}", fill_name(*fill));
                     }
                     Kind::Text { font_px, align, frame, .. } => {
                         info += &format!("\nfont {font_px:.0}px, {}", align_name(*align));
@@ -239,6 +240,16 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].shape_mut().map(|s| *s))
             .unwrap_or(self.style.shape);
+        // Shapes' line width section also offers no border.
+        let show_border = match self.tool {
+            Tool::Shape => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].border_mut().is_some()),
+            _ => false,
+        };
+        let border = targets
+            .iter()
+            .find_map(|&i| self.objects[i].border_mut().map(|b| *b))
+            .unwrap_or(self.style.border);
         let show_blur = match self.tool {
             Tool::Blur => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].blur_strength_mut().is_some()),
@@ -276,6 +287,7 @@ impl DeerawApp {
         let mut new_heads = None;
         let mut new_shape = None;
         let mut new_blur = None;
+        let mut new_border = None;
         // The stack above the toolbar grows upwards: this panel, then the open section's options.
         let mut top = toolbar.top();
         if show_color || show_blur {
@@ -304,6 +316,7 @@ impl DeerawApp {
                             }
                             for &(kind, size) in &sizes {
                                 self.style_toggle(ui, StyleSection::Size(kind), |ui, open| match kind {
+                                    SizeKind::Line if show_border && !border => icon_button(ui, open, Icon::StrokeWidth, 14.0, "No border"),
                                     SizeKind::Line => icon_button(ui, open, Icon::StrokeWidth, 14.0, &format!("Line width: {size:.0}px")),
                                     SizeKind::Font => size_button(ui, open, kind, size),
                                 });
@@ -365,9 +378,16 @@ impl DeerawApp {
                                     SizeKind::Line => LINE_WIDTHS,
                                     SizeKind::Font => FONT_SIZES,
                                 };
+                                let shapes = show_border && kind == SizeKind::Line;
+                                if shapes && no_border_button(ui, !border) {
+                                    new_border = Some(false);
+                                }
                                 for option in options {
-                                    if size_button(ui, current == Some(option), kind, option) {
+                                    if size_button(ui, current == Some(option) && (border || !shapes), kind, option) {
                                         new_size = Some((kind, option));
+                                        if shapes {
+                                            new_border = Some(true);
+                                        }
                                     }
                                 }
                             }
@@ -425,7 +445,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() && new_blur.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
             return;
         }
         self.style_open = None;
@@ -439,10 +459,22 @@ impl DeerawApp {
         }
         if let Some(fill) = new_fill {
             self.style.fill = fill;
+            self.style.keep_shapes_visible(false);
             for &i in &targets {
                 if let Some(f) = self.objects[i].fill_mut() {
                     *f = fill;
                 }
+                self.objects[i].keep_visible(false);
+            }
+        }
+        if let Some(border) = new_border {
+            self.style.border = border;
+            self.style.keep_shapes_visible(true);
+            for &i in &targets {
+                if let Some(b) = self.objects[i].border_mut() {
+                    *b = border;
+                }
+                self.objects[i].keep_visible(true);
             }
         }
         if let Some(pen) = new_pen {

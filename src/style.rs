@@ -65,15 +65,28 @@ pub struct Style {
     pub align: Align2,
     /// For text boxes and shapes; `None` is transparent (shapes are outline only).
     pub fill: Option<Color32>,
+    /// Whether shapes are outlined.
+    pub border: bool,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None }
+        Self { color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
     }
 }
 
 impl Style {
+    /// Like `Object::keep_visible`, for new shapes.
+    pub fn keep_shapes_visible(&mut self, border_changed: bool) {
+        if !self.border && self.fill.is_none() {
+            if border_changed {
+                self.fill = Some(self.color);
+            } else {
+                self.border = true;
+            }
+        }
+    }
+
     pub fn size_mut(&mut self, kind: SizeKind) -> &mut f32 {
         match kind {
             SizeKind::Line => &mut self.line_width,

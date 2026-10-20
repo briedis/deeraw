@@ -112,6 +112,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      only by default (`fill: None`, shared with text boxes' fill); an unfilled shape is grabbed only
      near its outline (`distance_to_outline`) unless selected, so things inside it stay clickable.
      Resizes freely; arrows attach to shapes like to text and images. Stays in Shape mode.
+     The line width options for shapes start with **no border** (`border: false`; a struck-through circle).
+     A shape always has a border or a fill (`keep_visible`, `keep_shapes_visible` for the style): turning
+     the border off on an unfilled shape fills it with its color, and making a borderless shape's fill
+     transparent brings the border back. Picking a width turns the border on again.
    - Blur (B): drag a box over part of an image to pixelate it, for hiding things in screenshots
      (`Kind::Blur`, `app/blur.rs`). The drag may start outside: the box attaches to the first image it
      touches (topmost if several) and is cut to that image's edges; one that never touches an image
@@ -184,7 +188,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,
    red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Arrow heads (arrows, not lines; `ArrowHeads`/`Head` in `object.rs`): a start button (pointing left) and an end button (pointing right), each previewing that end and opening its options: none, open lines or solid triangle (default: none at the start, solid at the end). Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text and the Text tool
-   also get an alignment button (3×3 grid; when the targets are only inline text, just a left/center/right row, which keeps the vertical part); text, shapes and the Text and Shape tools get a fill button
+   also get an alignment button (3×3 grid; when the targets are only inline text, just a left/center/right row, which keeps the vertical part); shapes and the Shape tool also get "no border" among the line widths; text, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
    The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
    With a drawing tool it sets the style of new objects; with a selection it restyles every

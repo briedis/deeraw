@@ -67,6 +67,19 @@ pub fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32)
     response.on_hover_text(hover).clicked()
 }
 
+/// A selectable button for shapes without an outline: a struck-through circle.
+pub fn no_border_button(ui: &mut egui::Ui, selected: bool) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::new(30.0, 22.0));
+    let response = ui.add(button);
+    let center = response.rect.center();
+    let stroke = Stroke::new(1.5, ui.visuals().text_color());
+    let radius = 6.0;
+    ui.painter().circle_stroke(center, radius, stroke);
+    let d = Vec2::splat(radius * std::f32::consts::FRAC_1_SQRT_2);
+    ui.painter().line_segment([center - Vec2::new(-d.x, d.y), center + Vec2::new(-d.x, d.y)], stroke);
+    response.on_hover_text("No border").clicked()
+}
+
 /// A selectable pen style button with a sample stroke: plain or hand-drawn.
 pub fn pen_button(ui: &mut egui::Ui, selected: bool, hand_drawn: bool) -> bool {
     let button = egui::Button::selectable(selected, "").min_size(Vec2::new(30.0, 22.0));

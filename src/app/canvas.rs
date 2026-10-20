@@ -287,7 +287,7 @@ impl DeerawApp {
             }
             Some(Drawing::Shape(a, b)) => {
                 let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
-                let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
+                let stroke = if self.style.border { Stroke::new(self.style.line_width * scale, self.style.color) } else { Stroke::NONE };
                 paint_shape(&painter, self.style.shape, rect, stroke, self.style.fill);
             }
             Some(Drawing::Blur(image, a, b)) => {
@@ -606,8 +606,8 @@ impl DeerawApp {
             Some(Drawing::Shape(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);
                 if rect.width().max(rect.height()) >= MIN_SIZE {
-                    let Style { color, line_width: width, shape, fill, .. } = self.style;
-                    self.add(rect.expand2((Vec2::splat(MIN_SIZE) - rect.size()).max(Vec2::ZERO) / 2.0), Kind::Shape { shape, color, width, fill });
+                    let Style { color, line_width: width, shape, border, fill, .. } = self.style;
+                    self.add(rect.expand2((Vec2::splat(MIN_SIZE) - rect.size()).max(Vec2::ZERO) / 2.0), Kind::Shape { shape, color, width, border, fill });
                 }
             }
             Some(Drawing::Blur(Some(image), a, b)) => self.add_blur(image, Rect::from_two_pos(a, b)),

@@ -46,8 +46,9 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
             let stroke = Stroke::new(width * scale, *color);
             paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads.unwrap_or(ArrowHeads::NONE));
         }
-        Kind::Shape { shape, color, width, fill } => {
-            paint_shape(painter, *shape, rect, Stroke::new(width * scale, *color), *fill);
+        Kind::Shape { shape, color, width, border, fill } => {
+            let stroke = if *border { Stroke::new(width * scale, *color) } else { Stroke::NONE };
+            paint_shape(painter, *shape, rect, stroke, *fill);
         }
         Kind::Text { text, font_px, color, align, fill, frame } => {
             let frame = frame.map(|f| f * scale);

@@ -30,9 +30,10 @@ pub enum Kind {
     /// Without `heads` it's a plain line (Line tool). `bindings` (start, end) attach an endpoint
     /// to a side of a text or image object, which it then follows.
     Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, heads: Option<ArrowHeads>, bindings: [Option<Binding>; 2] },
-    /// A rectangle, ellipse or diamond filling `rect`, outlined `width` wide; `fill` `None` is
-    /// outline only (then it's grabbed only near the outline).
-    Shape { shape: Shape, color: Color32, width: f32, fill: Option<Color32> },
+    /// A rectangle, ellipse or diamond filling `rect`, outlined `width` wide unless `border` is
+    /// off; `fill` `None` is outline only (then it's grabbed only near the outline). It always
+    /// has a border or a fill (`keep_visible`).
+    Shape { shape: Shape, color: Color32, width: f32, border: bool, fill: Option<Color32> },
     /// Without `frame` (click to place), `rect` follows the laid-out text, it's one line per
     /// Enter (rows aligned by `align`'s x), resizing scales `font_px`, and `fill` is painted
     /// behind each row of text only. With `frame` (drag a box: its size, canvas pixels), lines
@@ -271,6 +272,26 @@ impl Object {
         }
     }
 
+    /// Whether the outline is drawn, for shapes only.
+    pub fn border_mut(&mut self) -> Option<&mut bool> {
+        match &mut self.kind {
+            Kind::Shape { border, .. } => Some(border),
+            _ => None,
+        }
+    }
+
+    /// A shape without a border or a fill would be invisible: after turning the border off,
+    /// it's filled with its color; after removing the fill, the border comes back.
+    pub fn keep_visible(&mut self, border_changed: bool) {
+        if let Kind::Shape { color, border: border @ false, fill: fill @ None, .. } = &mut self.kind {
+            if border_changed {
+                *fill = Some(*color);
+            } else {
+                *border = true;
+            }
+        }
+    }
+
     /// Background, for text and shapes.
     pub fn fill_mut(&mut self) -> Option<&mut Option<Color32>> {
         match &mut self.kind {
@@ -317,5 +338,31 @@ mod tests {
         assert_eq!(anchor(rect, Side::Right), Pos2::new(100.0 + ANCHOR_GAP, 20.0));
         assert_eq!(anchor(rect, Side::Top), Pos2::new(50.0, -ANCHOR_GAP));
         assert_eq!(anchor(rect, Side::Bottom), Pos2::new(50.0, 40.0 + ANCHOR_GAP));
+    }
+
+    #[test]
+    fn shapes_stay_visible() {
+        let shape = |border, fill| Object {
+            id: 1,
+            rect: Rect::ZERO,
+            aspect: 1.0,
+            kind: Kind::Shape { shape: Shape::Rectangle, color: Color32::RED, width: 3.0, border, fill },
+        };
+        let parts = |o: Object| match o.kind {
+            Kind::Shape { border, fill, .. } => (border, fill),
+            _ => unreachable!(),
+        };
+        // Border turned off on an unfilled shape: filled with its color.
+        let mut o = shape(false, None);
+        o.keep_visible(true);
+        assert_eq!(parts(o), (false, Some(Color32::RED)));
+        // Fill removed from a borderless shape: the border comes back.
+        let mut o = shape(false, None);
+        o.keep_visible(false);
+        assert_eq!(parts(o), (true, None));
+        // Otherwise nothing changes.
+        let mut o = shape(false, Some(Color32::BLUE));
+        o.keep_visible(true);
+        assert_eq!(parts(o), (false, Some(Color32::BLUE)));
     }
 }
