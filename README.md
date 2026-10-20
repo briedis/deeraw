@@ -84,3 +84,7 @@ Every push builds Windows and macOS on GitHub Actions (`.github/workflows/build.
 ## License
 
 [PolyForm Shield 1.0.0](LICENSE.md): free to use, including commercially, except to build a competing product.
+
+## Privacy
+
+Deeraw collects no data and makes no network requests; see [PRIVACY.md](PRIVACY.md).
