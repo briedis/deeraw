@@ -30,6 +30,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
      Images with a side over the GPU's texture limit (`max_texture_side`, usually 8192) are scaled
      down to fit (`fit_texture_limit` in files.rs), with a notice; egui panics on bigger textures.
+   - Pasting text outside a text box (egui reports text, not an image, when the clipboard has both) places it as inline text in
+     the Text tool's style (font size, text color, alignment, background), centered like an image paste, and
+     selects it (`place_text`). Markdown in it is formatted. The launcher's `--paste` places only images.
    - Ctrl+S saves the same image as a PNG file: a Save As dialog (rfd) suggests
      `YYYY-MM-DD_HHMMSS.png` (local time) and opens in the last save's folder (per session).
      `.png` is added if no extension is typed; a failed write shows an error dialog.
@@ -280,7 +283,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit.
   It passes `--paste`, so a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
-  (`paste_on_start`; text is ignored outside a text box, so only an image is placed). A running Deeraw gets
+  (`paste_on_start`; text on the clipboard is ignored then, `start_paste_frame`, so only an image is placed). A running Deeraw gets
   no arguments from macOS and is just brought to the front. It
   registers itself as a login item (`SMAppService`, needs it in `/Applications`). `build.sh [out_dir] [icns]`
   builds it universal (default: installs to `/Applications`); the menu bar PNGs are committed, rendered from

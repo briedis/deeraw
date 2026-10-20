@@ -56,15 +56,15 @@ impl DeerawApp {
             for event in ui.input(|i| i.events.clone()) {
                 match event {
                     egui::Event::PasteImage(image) => {
-                        let from_menu = self
-                            .menu_paste_frame
-                            .take()
-                            .is_some_and(|frame| ui.ctx().cumulative_frame_nr() <= frame + 2);
-                        let center = ui
-                            .input(|i| i.pointer.hover_pos())
-                            .filter(|p| canvas_rect.contains(*p) && !from_menu)
-                            .unwrap_or(canvas_rect.center());
+                        let center = self.paste_center(ui, canvas_rect);
                         self.place_image(ui.ctx(), image, center, canvas_rect, to_canvas);
+                    }
+                    egui::Event::Paste(text) if !text.trim().is_empty() => {
+                        let at_start = self.start_paste_frame.take().is_some_and(|frame| ui.ctx().cumulative_frame_nr() <= frame + 2);
+                        let center = self.paste_center(ui, canvas_rect);
+                        if !at_start {
+                            self.place_text(ui.painter(), &text, to_canvas(center));
+                        }
                     }
                     egui::Event::Copy if !self.objects.is_empty() => {
                         self.export = Some(Export::new(self.objects.clone(), ExportTarget::Clipboard));
@@ -577,6 +577,24 @@ impl DeerawApp {
                 }
             }
         }
+    }
+
+    /// Where a paste goes (screen): under the pointer, or the canvas center for Edit > Paste
+    /// (the pointer is still where the menu was) or when the pointer is elsewhere.
+    fn paste_center(&mut self, ui: &egui::Ui, canvas_rect: Rect) -> Pos2 {
+        let from_menu = self.menu_paste_frame.take().is_some_and(|frame| ui.ctx().cumulative_frame_nr() <= frame + 2);
+        ui.input(|i| i.pointer.hover_pos())
+            .filter(|p| canvas_rect.contains(*p) && !from_menu)
+            .unwrap_or(canvas_rect.center())
+    }
+
+    /// Adds pasted text as inline text in the Text tool's style, centered on `center` (canvas), and selects it.
+    fn place_text(&mut self, painter: &egui::Painter, text: &str, center: Pos2) {
+        let text = text.replace("\r\n", "\n").trim_end().to_owned();
+        let Style { font_px, text_color: color, align, fill, .. } = self.style;
+        let size = layout_text(painter, &text, font_px, color, align, None, false).size() + 2.0 * text_padding(font_px);
+        self.add(Rect::from_center_size(center, size), Kind::Text { text, font_px, color, align, fill, frame: None });
+        self.tool = Tool::Select;
     }
 
     /// Adds an empty text object (its text at `min`, or as the box `frame` there) and starts editing it.

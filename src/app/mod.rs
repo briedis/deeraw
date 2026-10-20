@@ -139,6 +139,9 @@ pub struct DeerawApp {
     menu_paste_frame: Option<u64>,
     /// Started with `--paste` (by the macOS menu bar launcher): paste the clipboard on the first frame.
     paste_on_start: bool,
+    /// Frame of that paste, which places only an image: text left on the clipboard isn't meant
+    /// for the new drawing.
+    start_paste_frame: Option<u64>,
     notice: Option<Notice>,
     /// Last window title sent; see `update_title`.
     title: Option<String>,
@@ -188,8 +191,9 @@ impl eframe::App for DeerawApp {
             self.show_layers = !self.show_layers;
         }
         if std::mem::take(&mut self.paste_on_start) {
-            // Like Edit > Paste; text is ignored outside a text box, so only an image is placed.
+            // Like Edit > Paste, but only an image is placed.
             self.menu_paste_frame = Some(ui.ctx().cumulative_frame_nr());
+            self.start_paste_frame = self.menu_paste_frame;
             ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
         egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
