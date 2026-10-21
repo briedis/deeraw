@@ -32,7 +32,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      down to fit (`fit_texture_limit` in files.rs), with a notice; egui panics on bigger textures.
    - Pasting text outside a text box (egui reports text, not an image, when the clipboard has both) places it as inline text in
      the Text tool's style (font size, text color, alignment, background), centered like an image paste, and
-     selects it (`place_text`). Markdown in it is formatted. The launcher's `--paste` places only images.
+     selects it (`place_text`). Markdown in it is formatted. `--paste` places only images.
    - Ctrl+S saves the same image as a PNG file: a Save As dialog (rfd) suggests
      `YYYY-MM-DD_HHMMSS.png` (local time) and opens in the last save's folder (per session).
      `.png` is added if no extension is typed; a failed write shows an error dialog.
@@ -241,7 +241,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
   `app/menu.rs` (menu bar, About), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
-  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit (screenshot window handling; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
+  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping and PNG writing.
@@ -302,13 +302,16 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must be annotated here), push the tag.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   lives inside Deeraw.app (`Contents/Library/LoginItems/Deeraw Launcher.app`, so Spotlight doesn't list it) and
-  shows the deer in the menu bar; left click opens the Deeraw.app it's in, right click shows Open/Quit.
-  It passes `--paste` when the clipboard has an image copied in the last 5 minutes (macOS has no clipboard
-  time, so the launcher polls `NSPasteboard.changeCount` every second and notes when it changed; changes from before
-  it started count as old), else `--screenshot`, which makes Deeraw start a screenshot once its window is key
-  (`screenshot_on_start`, retried for up to `SCREENSHOT_START_FRAMES`). With `--paste`, a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
-  (`paste_on_start`; text on the clipboard is ignored then, `start_paste_frame`, so only an image is placed). A running Deeraw gets
-  no arguments from macOS and is just brought to the front. It
+  shows the deer in the menu bar; left click takes a screenshot in the Deeraw.app it's in, right click shows
+  Take Screenshot/Open Deeraw (no screenshot)/Quit. For a screenshot it opens Deeraw with `--screenshot` and also posts the
+  distributed notification `com.briedis.deeraw.screenshot`, since a running Deeraw gets no arguments from macOS
+  (`listen_for_launcher` in `app/screenshot.rs`, observed via objc2-foundation/block2). Either makes Deeraw start a
+  screenshot once its window is key (`screenshot_until`, retried for up to `SCREENSHOT_START_FRAMES`). Once taken,
+  a launcher screenshot replaces the drawing (`screenshot_new_drawing`, `new_drawing`; undo brings the old one back,
+  and the capture fits the window like a paste onto an empty canvas); Escape cancels and keeps it. The toolbar's
+  Screenshot button still adds to the drawing. Deeraw still accepts `--paste` (the launcher no longer passes it): a
+  freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste (`paste_on_start`; text on the
+  clipboard is ignored then, `start_paste_frame`, so only an image is placed). It
   registers itself as a login item (`SMAppService`), and Deeraw starts it in the background on every launch
   (`start_launcher` in main.rs, `open -g`; nothing happens if it's running or Deeraw isn't run from its bundle). `build.sh [Deeraw.app]` builds it universal into that app
   (default `/Applications/Deeraw.app`) and re-signs the app; the menu bar PNGs are committed, rendered from

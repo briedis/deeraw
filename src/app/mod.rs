@@ -147,10 +147,16 @@ pub struct DeerawApp {
     /// A screenshot being taken (`screenshot.rs`): its image, or `None` if cancelled, arrives here.
     #[cfg(any(target_os = "macos", windows))]
     screenshot: Option<std::sync::mpsc::Receiver<Option<ColorImage>>>,
-    /// Started with `--screenshot` (by the launcher, when the clipboard has no recent image):
-    /// start a screenshot once the window is up.
+    /// Asked for a screenshot (by the launcher: `--screenshot`, or its notification when already
+    /// running): start one once the window is key, retried until this frame.
     #[cfg(any(target_os = "macos", windows))]
-    screenshot_on_start: bool,
+    screenshot_until: Option<u64>,
+    /// The screenshot was asked for by the launcher: once taken, it starts a new drawing.
+    #[cfg(any(target_os = "macos", windows))]
+    screenshot_new_drawing: bool,
+    /// Set by the launcher's screenshot notification; see `listen_for_launcher`.
+    #[cfg(target_os = "macos")]
+    launcher_requests: Option<Arc<std::sync::atomic::AtomicBool>>,
     /// Frame of that paste, which places only an image: text left on the clipboard isn't meant
     /// for the new drawing.
     start_paste_frame: Option<u64>,
@@ -188,13 +194,17 @@ impl DeerawApp {
         let Settings { style, background, save_dir } =
             storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
         let paste_on_start = std::env::args().any(|a| a == "--paste");
+        #[cfg(any(target_os = "macos", windows))]
+        let screenshot_on_start = std::env::args().any(|a| a == "--screenshot");
         Self {
             style,
             background,
             save_dir,
             paste_on_start,
             #[cfg(any(target_os = "macos", windows))]
-            screenshot_on_start: std::env::args().any(|a| a == "--screenshot"),
+            screenshot_until: screenshot_on_start.then_some(SCREENSHOT_START_FRAMES),
+            #[cfg(any(target_os = "macos", windows))]
+            screenshot_new_drawing: screenshot_on_start,
             ..Default::default()
         }
     }
@@ -220,13 +230,24 @@ impl eframe::App for DeerawApp {
             self.start_paste_frame = self.menu_paste_frame;
             ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         }
+        #[cfg(target_os = "macos")]
+        {
+            let requests = self.launcher_requests.get_or_insert_with(|| screenshot::listen_for_launcher(ui.ctx()));
+            if requests.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                self.screenshot_until = Some(ui.ctx().cumulative_frame_nr() + SCREENSHOT_START_FRAMES);
+                self.screenshot_new_drawing = true;
+            }
+        }
         #[cfg(any(target_os = "macos", windows))]
         {
-            // Retried until the window is up (it isn't key on the first frames); given up after
-            // a while, e.g. if another app was clicked meanwhile.
-            if self.screenshot_on_start {
+            // Retried until the window is key (it isn't on the first frames, nor until the launcher
+            // has brought it to the front); given up after a while, e.g. if another app was clicked.
+            if let Some(until) = self.screenshot_until {
                 let started = self.start_screenshot(ui.ctx());
-                self.screenshot_on_start = !started && ui.ctx().cumulative_frame_nr() < SCREENSHOT_START_FRAMES;
+                self.screenshot_until = (!started && ui.ctx().cumulative_frame_nr() < until).then_some(until);
+                if !started && self.screenshot_until.is_none() {
+                    self.screenshot_new_drawing = false;
+                }
                 ui.ctx().request_repaint();
             }
             self.finish_screenshot();
@@ -323,6 +344,19 @@ impl DeerawApp {
     fn select_all(&mut self) {
         self.tool = Tool::Select;
         self.selected = self.objects.iter().map(|o| o.id).collect();
+    }
+
+    /// Empties the canvas for a new drawing; undo brings the old one back.
+    #[cfg(any(target_os = "macos", windows))]
+    fn new_drawing(&mut self) {
+        self.objects.clear();
+        self.selected.clear();
+        self.tool = Tool::Select;
+        self.drawing = None;
+        self.marquee = None;
+        self.editing = None;
+        self.cropping = None;
+        self.first_image = None;
     }
 }
 

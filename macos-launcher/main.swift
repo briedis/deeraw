@@ -1,4 +1,5 @@
-// Deeraw Launcher: a menu bar icon that opens Deeraw. Left click opens it, right click shows a menu.
+// Deeraw Launcher: a menu bar icon for Deeraw. Left click takes a screenshot into a new drawing, right
+// click shows a menu.
 import AppKit
 import ServiceManagement
 
@@ -6,17 +7,12 @@ import ServiceManagement
 let deerawURL = Bundle.main.bundleURL
     .deletingLastPathComponent().deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
-/// A clipboard image is pasted only if it was copied this recently; an older one is probably not
-/// what Deeraw was opened for, so it starts a screenshot instead.
-let freshClipboardSeconds: TimeInterval = 5 * 60
+/// Asks a running Deeraw to take a screenshot into a new drawing (`SCREENSHOT_NOTIFICATION` there).
+let screenshotNotification = Notification.Name("com.briedis.deeraw.screenshot")
 
 final class Launcher: NSObject, NSApplicationDelegate {
     var item: NSStatusItem!
     let menu = NSMenu()
-    /// macOS keeps no time for the clipboard, only a counter that goes up on every copy, so it's
-    /// polled to note when it last changed (`nil`: not since the launcher started).
-    var clipboardCount = NSPasteboard.general.changeCount
-    var clipboardChanged: Date?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -25,17 +21,16 @@ final class Launcher: NSObject, NSApplicationDelegate {
             image?.size = NSSize(width: 18, height: 18)
             image?.isTemplate = true
             button.image = image
-            button.toolTip = "Open Deeraw"
+            button.toolTip = "Take a screenshot in Deeraw"
             button.target = self
             button.action = #selector(clicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
 
+        menu.addItem(withTitle: "Take Screenshot", action: #selector(screenshot), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Open Deeraw", action: #selector(openDeeraw), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Launcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.watchClipboard() }
 
         // Start at login. Only takes effect for an app installed in /Applications.
         if SMAppService.mainApp.status != .enabled {
@@ -49,27 +44,26 @@ final class Launcher: NSObject, NSApplicationDelegate {
             item.button?.performClick(nil)
             item.menu = nil
         } else {
-            openDeeraw()
+            screenshot()
         }
     }
 
-    func watchClipboard() {
-        let count = NSPasteboard.general.changeCount
-        if count != clipboardCount {
-            clipboardCount = count
-            clipboardChanged = Date()
-        }
+    /// A running Deeraw gets no arguments from macOS, so it's asked by notification; a fresh one
+    /// gets --screenshot (and misses the notification, posted before it started).
+    @objc func screenshot() {
+        DistributedNotificationCenter.default().postNotificationName(
+            screenshotNotification, object: nil, userInfo: nil, deliverImmediately: true)
+        open(arguments: ["--screenshot"])
     }
 
+    /// Starts Deeraw or brings it to the front, keeping its drawing.
     @objc func openDeeraw() {
-        // --paste: Deeraw places the clipboard's image; --screenshot: it starts a screenshot (when
-        // there's no image, or it was copied long ago). Only on a fresh start; a running Deeraw is
-        // just brought to the front.
-        watchClipboard()
-        let hasImage = NSPasteboard.general.canReadObject(forClasses: [NSImage.self], options: nil)
-        let fresh = clipboardChanged.map { Date().timeIntervalSince($0) < freshClipboardSeconds } ?? false
+        open(arguments: [])
+    }
+
+    func open(arguments: [String]) {
         let config = NSWorkspace.OpenConfiguration()
-        config.arguments = [hasImage && fresh ? "--paste" : "--screenshot"]
+        config.arguments = arguments
         NSWorkspace.shared.openApplication(at: deerawURL, configuration: config)
     }
 }

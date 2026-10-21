@@ -39,9 +39,9 @@ brew install --cask briedis/tap/deeraw
 
 `brew upgrade` updates it later. This installs `Deeraw.app` into `/Applications`. Inside it is
 **Deeraw Launcher** (`Contents/Library/LoginItems`, so it doesn't show up in Spotlight), a deer in the menu bar
-that Deeraw starts and that starts at login. Click it to open Deeraw: it pastes the
-clipboard's image if you copied one in the last 5 minutes, otherwise it starts a screenshot. Right click for
-its menu (Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
+that Deeraw starts and that starts at login. Click it to take a screenshot: once taken, it replaces
+the drawing with a new one (Cmd+Z brings the old one back); press Escape to cancel and keep the
+drawing. Right click for its menu (Take Screenshot, Open Deeraw without a screenshot, Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
 
 Without Homebrew: download `deeraw-macos-universal.zip` from [Releases](https://github.com/briedis/deeraw/releases),
 unzip it and move `Deeraw.app` to `/Applications`. It isn't notarized by Apple, so macOS blocks it at first:

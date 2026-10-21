@@ -21,11 +21,14 @@ rfd = { version = "0.17.2", default-features = false }
 wasm-bindgen-futures = "0.4.79"
 web-sys = { version = "0.3.106", features = ["Document", "HtmlCanvasElement", "Window"] }
 
-# The Screenshot button hides and shows the window itself (`app/screenshot.rs`); all already in winit's tree.
+# The Screenshot button hides and shows the window itself, and the menu bar launcher asks for one by
+# distributed notification (`app/screenshot.rs`); all already in winit's tree.
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
 dispatch2 = "0.3.1"
 objc2 = "0.6.3"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSDistributedNotificationCenter", "NSNotification", "NSOperation", "NSString"] }
 
 # The Screenshot button on Windows: Snipping Tool's area selection, read back from the clipboard;
 # both already in eframe's tree.

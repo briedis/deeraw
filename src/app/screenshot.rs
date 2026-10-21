@@ -18,6 +18,9 @@ use std::sync::mpsc;
 
 use super::DeerawApp;
 
+#[cfg(target_os = "macos")]
+pub(super) use platform::listen_for_launcher;
+
 impl DeerawApp {
     /// Once the selection is done (or cancelled), hands the capture to `canvas`.
     pub(super) fn finish_screenshot(&mut self) {
@@ -28,6 +31,10 @@ impl DeerawApp {
             Err(mpsc::TryRecvError::Disconnected) => None,
         };
         self.screenshot = None;
+        // A launcher screenshot replaces the drawing (undoably); a cancelled one keeps it.
+        if std::mem::take(&mut self.screenshot_new_drawing) && image.is_some() {
+            self.new_drawing();
+        }
         self.opened = image.map(Arc::new);
     }
 }
@@ -35,14 +42,41 @@ impl DeerawApp {
 #[cfg(target_os = "macos")]
 mod platform {
     use std::process::Command;
+    use std::ptr::NonNull;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc;
 
+    use block2::RcBlock;
     use dispatch2::DispatchQueue;
     use eframe::egui::{self, ColorImage};
     use objc2::MainThreadMarker;
     use objc2_app_kit::NSApplication;
+    use objc2_foundation::{NSDistributedNotificationCenter, NSNotification, NSOperationQueue, NSString};
 
     use super::super::DeerawApp;
+
+    /// Posted by the menu bar launcher (`macos-launcher/main.swift`) to a running Deeraw, which
+    /// gets no arguments from macOS.
+    const SCREENSHOT_NOTIFICATION: &str = "com.briedis.deeraw.screenshot";
+
+    /// Starts listening for the launcher's screenshot requests; the flag is set on each one.
+    pub(in crate::app) fn listen_for_launcher(ctx: &egui::Context) -> Arc<AtomicBool> {
+        let requested = Arc::new(AtomicBool::new(false));
+        let flag = requested.clone();
+        let ctx = ctx.clone();
+        let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            flag.store(true, Ordering::Relaxed);
+            ctx.request_repaint();
+        });
+        let center = NSDistributedNotificationCenter::defaultCenter();
+        let name = NSString::from_str(SCREENSHOT_NOTIFICATION);
+        // Delivered on the main queue, which the event loop runs. The center keeps the observer.
+        let _observer = unsafe {
+            center.addObserverForName_object_queue_usingBlock(Some(&name), None, Some(&NSOperationQueue::mainQueue()), &block)
+        };
+        requested
+    }
 
     impl DeerawApp {
         /// Hides the window and starts the system's area selection on another thread. False if
