@@ -2,7 +2,10 @@
 import AppKit
 import ServiceManagement
 
-let deerawURL = URL(fileURLWithPath: "/Applications/Deeraw.app")
+/// The launcher lives in Deeraw.app/Contents/Library/LoginItems.
+let deerawURL = Bundle.main.bundleURL
+    .deletingLastPathComponent().deletingLastPathComponent()
+    .deletingLastPathComponent().deletingLastPathComponent()
 /// A clipboard image is pasted only if it was copied this recently; an older one is probably not
 /// what Deeraw was opened for, so it starts a screenshot instead.
 let freshClipboardSeconds: TimeInterval = 5 * 60

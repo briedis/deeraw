@@ -91,13 +91,14 @@ jobs:
           </plist>
           EOF
 
+          # Menu bar launcher, inside Deeraw.app (Contents/Library/LoginItems).
+          sh macos-launcher/build.sh "$APP"
+
           # Ad-hoc signature: Apple Silicon refuses to run unsigned binaries at all.
           codesign --force --deep --sign - "$APP"
 
-          # Menu bar launcher, zipped next to Deeraw.app.
           mkdir out
           mv "$APP" out/
-          sh macos-launcher/build.sh out "out/$APP/Contents/Resources/deeraw.icns"
           (cd out && ditto -c -k --sequesterRsrc . ../deeraw-macos-universal.zip)
       - uses: actions/upload-artifact@v6
         with:

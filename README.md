@@ -37,17 +37,16 @@ With [Homebrew](https://brew.sh):
 brew install --cask briedis/tap/deeraw
 ```
 
-`brew upgrade` updates it later. This installs two apps into `/Applications`:
-
-- **Deeraw**, the app itself.
-- **Deeraw Launcher**, a deer in the menu bar that starts at login. Click it to open Deeraw: it pastes the
-  clipboard's image if you copied one in the last 5 minutes, otherwise it starts a screenshot. Right click for
-  its menu (Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
+`brew upgrade` updates it later. This installs `Deeraw.app` into `/Applications`. Inside it is
+**Deeraw Launcher** (`Contents/Library/LoginItems`, so it doesn't show up in Spotlight), a deer in the menu bar
+that starts at login. Click it to open Deeraw: it pastes the
+clipboard's image if you copied one in the last 5 minutes, otherwise it starts a screenshot. Right click for
+its menu (Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
 
 Without Homebrew: download `deeraw-macos-universal.zip` from [Releases](https://github.com/briedis/deeraw/releases),
-unzip it and move both apps to `/Applications`. The apps aren't notarized by Apple, so macOS blocks them at first:
-open one, then allow it under System Settings → Privacy & Security → **Open Anyway** (or run
-`xattr -dr com.apple.quarantine /Applications/Deeraw*.app`).
+unzip it and move `Deeraw.app` to `/Applications`. It isn't notarized by Apple, so macOS blocks it at first:
+open it, then allow it under System Settings → Privacy & Security → **Open Anyway** (or run
+`xattr -dr com.apple.quarantine /Applications/Deeraw.app`).
 
 The Screenshot button needs the Screen Recording permission; macOS asks for it the first time.
 

@@ -293,22 +293,23 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   Nothing here draws indirectly. Symptoms of it coming back: the app exits at startup with
   `Error: Wgpu(RequestDeviceError(... Device(Lost)))` and no window.
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
-- CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` + `Deeraw Launcher.app` zip) on every push/PR; a `v*` tag publishes a release.
+- CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip, the launcher inside) on every push/PR; a `v*` tag publishes a release.
 - Homebrew: `brew install --cask briedis/tap/deeraw`, from the tap repo https://github.com/briedis/homebrew-tap
-  (`Casks/deeraw.rb`, installs both apps from the release's macOS zip and strips their quarantine flag, since
-  they're only ad-hoc signed; homebrew/cask itself requires notarized apps). After each release, bump `version`
+  (`Casks/deeraw.rb`, installs `Deeraw.app` from the release's macOS zip and strips its quarantine flag, since
+  it's only ad-hoc signed; homebrew/cask itself requires notarized apps). After each release, bump `version`
   and `sha256` there by hand (`shasum -a 256` of `deeraw-macos-universal.zip`). Release steps: bump `version` in
   Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must be annotated here), push the tag.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
-  shows the deer in the menu bar; left click opens `/Applications/Deeraw.app`, right click shows Open/Quit.
+  lives inside Deeraw.app (`Contents/Library/LoginItems/Deeraw Launcher.app`, so Spotlight doesn't list it) and
+  shows the deer in the menu bar; left click opens the Deeraw.app it's in, right click shows Open/Quit.
   It passes `--paste` when the clipboard has an image copied in the last 5 minutes (macOS has no clipboard
   time, so the launcher polls `NSPasteboard.changeCount` every second and notes when it changed; changes from before
   it started count as old), else `--screenshot`, which makes Deeraw start a screenshot once its window is key
   (`screenshot_on_start`, retried for up to `SCREENSHOT_START_FRAMES`). With `--paste`, a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
   (`paste_on_start`; text on the clipboard is ignored then, `start_paste_frame`, so only an image is placed). A running Deeraw gets
   no arguments from macOS and is just brought to the front. It
-  registers itself as a login item (`SMAppService`, needs it in `/Applications`). `build.sh [out_dir] [icns]`
-  builds it universal (default: installs to `/Applications`); the menu bar PNGs are committed, rendered from
+  registers itself as a login item (`SMAppService`). `build.sh [Deeraw.app]` builds it universal into that app
+  (default `/Applications/Deeraw.app`) and re-signs the app; the menu bar PNGs are committed, rendered from
   `menubar-deer.svg` (the deer from `assets/deer.svg`, black, thicker strokes, no background).
 - Git repo on `master`; commit after each working step.
 - Never add a `Co-Authored-By:` trailer (or any other co-author credit) to a commit. Commits are

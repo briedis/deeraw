@@ -1,14 +1,13 @@
 #!/bin/sh
-# Builds "Deeraw Launcher.app" (a menu bar icon that opens /Applications/Deeraw.app) as a universal
-# binary into the given folder (default /Applications). It registers itself as a login item on first launch.
-# Usage: build.sh [out_dir] [icns]   (icns: the app icon, default Deeraw.app's)
+# Builds "Deeraw Launcher.app" (a menu bar icon that opens the Deeraw.app it's inside) as a universal
+# binary into Deeraw.app/Contents/Library/LoginItems, so it doesn't show up in Spotlight on its own, and
+# re-signs Deeraw.app. It registers itself as a login item on first launch.
+# Usage: build.sh [Deeraw.app]   (default /Applications/Deeraw.app; its icon is used for the launcher)
 # The menu bar PNGs are committed; after editing menubar-deer.svg, regenerate them with
 # rsvg-convert -w 18 -h 18 menubar-deer.svg -o menubar-deer.png (and -w 36 -h 36 for @2x).
 set -e
-OUT="$(cd "${1:-/Applications}" && pwd)"
-ICNS="${2:-/Applications/Deeraw.app/Contents/Resources/deeraw.icns}"
-case "$ICNS" in /*) ;; *) ICNS="$PWD/$ICNS" ;; esac
-APP="$OUT/Deeraw Launcher.app"
+DEERAW="$(cd "${1:-/Applications/Deeraw.app}" && pwd)"
+APP="$DEERAW/Contents/Library/LoginItems/Deeraw Launcher.app"
 cd "$(dirname "$0")"
 TMP=$(mktemp -d)
 
@@ -18,7 +17,7 @@ swiftc -O -target arm64-apple-macos13 main.swift -o "$TMP/arm64"
 swiftc -O -target x86_64-apple-macos13 main.swift -o "$TMP/x86_64"
 lipo -create -output "$APP/Contents/MacOS/DeerawLauncher" "$TMP/arm64" "$TMP/x86_64"
 cp menubar-deer.png menubar-deer@2x.png "$APP/Contents/Resources/"
-cp "$ICNS" "$APP/Contents/Resources/deeraw.icns" 2>/dev/null || true
+cp "$DEERAW/Contents/Resources/deeraw.icns" "$APP/Contents/Resources/" 2>/dev/null || true
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -39,4 +38,6 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 
 codesign --force --deep --sign - "$APP"
+# Deeraw.app's signature covers its contents, so adding the launcher invalidated it.
+codesign --force --sign - "$DEERAW"
 echo "Built $APP"
