@@ -308,7 +308,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (`screenshot_on_start`, retried for up to `SCREENSHOT_START_FRAMES`). With `--paste`, a freshly started Deeraw pastes the clipboard on its first frame like Edit > Paste
   (`paste_on_start`; text on the clipboard is ignored then, `start_paste_frame`, so only an image is placed). A running Deeraw gets
   no arguments from macOS and is just brought to the front. It
-  registers itself as a login item (`SMAppService`). `build.sh [Deeraw.app]` builds it universal into that app
+  registers itself as a login item (`SMAppService`), and Deeraw starts it in the background on every launch
+  (`start_launcher` in main.rs, `open -g`; nothing happens if it's running or Deeraw isn't run from its bundle). `build.sh [Deeraw.app]` builds it universal into that app
   (default `/Applications/Deeraw.app`) and re-signs the app; the menu bar PNGs are committed, rendered from
   `menubar-deer.svg` (the deer from `assets/deer.svg`, black, thicker strokes, no background).
 - Git repo on `master`; commit after each working step.

@@ -79,6 +79,23 @@ fn install_crash_report() {
     }));
 }
 
+/// Starts the menu bar launcher that ships inside Deeraw.app (`macos-launcher/`), in the
+/// background. Does nothing if it's already running or Deeraw isn't run from its app bundle
+/// (e.g. `cargo run`).
+#[cfg(target_os = "macos")]
+fn start_launcher() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    // Deeraw.app/Contents/MacOS/deeraw → Deeraw.app/Contents
+    let Some(contents) = exe.parent().and_then(|dir| dir.parent()) else { return };
+    let launcher = contents.join("Library/LoginItems/Deeraw Launcher.app");
+    if launcher.exists() {
+        // On a thread so startup doesn't wait for it (and `open` is reaped when it exits).
+        std::thread::spawn(move || {
+            let _ = std::process::Command::new("/usr/bin/open").arg("-g").arg(launcher).status();
+        });
+    }
+}
+
 /// Shared setup for the native and web builds.
 fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
     // Ctrl +/- zooms the canvas, not the whole UI.
@@ -90,6 +107,8 @@ fn create_app(cc: &eframe::CreationContext) -> Box<dyn eframe::App> {
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
     install_crash_report();
+    #[cfg(target_os = "macos")]
+    start_launcher();
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("Deeraw")

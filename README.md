@@ -39,7 +39,7 @@ brew install --cask briedis/tap/deeraw
 
 `brew upgrade` updates it later. This installs `Deeraw.app` into `/Applications`. Inside it is
 **Deeraw Launcher** (`Contents/Library/LoginItems`, so it doesn't show up in Spotlight), a deer in the menu bar
-that starts at login. Click it to open Deeraw: it pastes the
+that Deeraw starts and that starts at login. Click it to open Deeraw: it pastes the
 clipboard's image if you copied one in the last 5 minutes, otherwise it starts a screenshot. Right click for
 its menu (Quit Launcher). If you don't want it, quit it and remove it from System Settings → General → Login Items.
 
