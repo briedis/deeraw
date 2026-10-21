@@ -2,12 +2,13 @@
 # Builds "Deeraw Launcher.app" (a menu bar icon that opens the Deeraw.app it's inside) as a universal
 # binary into Deeraw.app/Contents/Library/LoginItems, so it doesn't show up in Spotlight on its own, and
 # re-signs Deeraw.app. It registers itself as a login item on first launch.
-# Usage: build.sh [Deeraw.app]   (default /Applications/Deeraw.app; its icon is used for the launcher)
+# Usage: build.sh [Deeraw.app]   (default /Applications/Deeraw.app; its icon and version are used for the launcher)
 # The menu bar PNGs are committed; after editing menubar-deer.svg, regenerate them with
 # rsvg-convert -w 18 -h 18 menubar-deer.svg -o menubar-deer.png (and -w 36 -h 36 for @2x).
 set -e
 DEERAW="$(cd "${1:-/Applications/Deeraw.app}" && pwd)"
 APP="$DEERAW/Contents/Library/LoginItems/Deeraw Launcher.app"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$DEERAW/Contents/Info.plist")
 cd "$(dirname "$0")"
 TMP=$(mktemp -d)
 
@@ -29,8 +30,8 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleExecutable</key><string>DeerawLauncher</string>
   <key>CFBundleIconFile</key><string>deeraw</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleVersion</key><string>${VERSION}</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
 </dict>
