@@ -25,7 +25,7 @@ impl DeerawApp {
                     self.save_as();
                 }
                 ui.separator();
-                if menu_item(ui, "Exit", None, true) {
+                if menu_item(ui, "Exit", command(Key::W), true) {
                     ui.send_viewport_cmd(ViewportCommand::Close);
                 }
             });

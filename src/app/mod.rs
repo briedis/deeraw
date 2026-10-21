@@ -210,6 +210,10 @@ impl eframe::App for DeerawApp {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
             self.show_layers = !self.show_layers;
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::W)) {
+            ui.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
         if std::mem::take(&mut self.paste_on_start) {
             // Like Edit > Paste, but only an image is placed.
             self.menu_paste_frame = Some(ui.ctx().cumulative_frame_nr());

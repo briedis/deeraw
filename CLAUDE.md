@@ -215,7 +215,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 9. **Menu bar** — top of the window (`menu_bar`).
    - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
-     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Exit.
+     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Exit (Ctrl+W; works
+     even while typing).
    - Edit: Undo, Redo, Cut, Copy, Paste, Delete, Select all, Duplicate, with shortcuts shown. Cut/Copy/Paste
      send `ViewportCommand::Request*`, so they produce the same clipboard events as the keys (and act on
      text being edited). A menu Paste goes to the canvas center, not under the pointer.
