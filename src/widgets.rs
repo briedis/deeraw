@@ -18,7 +18,8 @@ pub fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: Option<egui::Keyboard
 
 /// A selectable color button; `None` shows a checkerboard (transparent). Returns whether it was clicked.
 pub fn color_swatch(ui: &mut egui::Ui, selected: bool, name: &str, color: Option<Color32>) -> bool {
-    color_swatch_sized(ui, selected, name, color, Vec2::splat(22.0), 14.0).clicked()
+    let response = color_swatch_sized(ui, selected, name, color, Vec2::splat(22.0), 14.0);
+    pressed(ui, &response)
 }
 
 /// A color swatch of `swatch` points on a selectable button of at least `button`.
@@ -64,7 +65,8 @@ pub fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32)
             ui.add(button)
         }
     };
-    response.on_hover_text(hover).clicked()
+    let response = response.on_hover_text(hover);
+    pressed(ui, &response)
 }
 
 /// A selectable button for shapes without an outline: a struck-through circle.
@@ -77,7 +79,8 @@ pub fn no_border_button(ui: &mut egui::Ui, selected: bool) -> bool {
     ui.painter().circle_stroke(center, radius, stroke);
     let d = Vec2::splat(radius * std::f32::consts::FRAC_1_SQRT_2);
     ui.painter().line_segment([center - Vec2::new(-d.x, d.y), center + Vec2::new(-d.x, d.y)], stroke);
-    response.on_hover_text("No border").clicked()
+    let response = response.on_hover_text("No border");
+    pressed(ui, &response)
 }
 
 /// A selectable pen style button with a sample stroke: plain or hand-drawn.
@@ -100,7 +103,8 @@ pub fn pen_button(ui: &mut egui::Ui, selected: bool, hand_drawn: bool) -> bool {
         ui.painter().line(points, Stroke::new(1.5, color));
     }
     let name = if hand_drawn { "Hand-drawn: smoothed, faster strokes are thinner" } else { "Plain line" };
-    response.on_hover_text(name).clicked()
+    let response = response.on_hover_text(name);
+    pressed(ui, &response)
 }
 
 /// A selectable button showing a short arrow with `head` at its `start` (pointing left) or
@@ -113,7 +117,7 @@ pub fn arrow_head_button(ui: &mut egui::Ui, selected: bool, head: Head, start: b
     let heads = if start { ArrowHeads { start: head, end: Head::None } } else { ArrowHeads { start: Head::None, end: head } };
     // Sized to look like a 2px arrow at 100%.
     paint_arrow(ui.painter(), r.left_center(), r.right_center(), Stroke::new(1.5, color), 0.45, heads);
-    response.clicked()
+    pressed(ui, &response)
 }
 
 /// A selectable blur strength button: a checkered square, 4×4 (light), 3×3 or 2×2 (strong).
@@ -140,7 +144,7 @@ pub fn blur_button(ui: &mut egui::Ui, selected: bool, strength: BlurStrength) ->
             ui.painter().rect_filled(Rect::from_min_size(min, Vec2::splat(cell)), 0.0, color);
         }
     }
-    response.clicked()
+    pressed(ui, &response)
 }
 
 /// E.g. "top left", "center".
@@ -162,7 +166,7 @@ pub fn align_button(ui: &mut egui::Ui, selected: bool, align: Align2) -> bool {
     ui.painter().rect_stroke(frame, 1.0, Stroke::new(1.0, color.gamma_multiply(0.5)), StrokeKind::Inside);
     let block = align.align_size_within_rect(Vec2::new(8.0, 4.0), frame.shrink(2.0));
     ui.painter().rect_filled(block, 0.0, color);
-    response.clicked()
+    pressed(ui, &response)
 }
 
 /// A button icon, traced from the Deeraw icon set.
@@ -277,5 +281,16 @@ pub fn icon_button(ui: &mut egui::Ui, selected: bool, icon: Icon, size: f32, hin
     if let Icon::Ellipse = icon {
         ui.painter().circle_stroke(origin + Vec2::splat(size / 2.0), 11.0 * scale, Stroke::new(W * scale, color));
     }
-    response.clicked()
+    pressed(ui, &response)
+}
+
+/// Whether `response`'s button was clicked: also when the pointer moved more than 6pt or the
+/// press lasted over 0.8s, as long as it was pressed and released on the button. egui's `clicked`
+/// drops those, so a quick click on the way to the canvas, or a slow one, did nothing.
+pub fn pressed(ui: &egui::Ui, response: &egui::Response) -> bool {
+    let id = response.id.with("pressed");
+    let down_on = response.is_pointer_button_down_on() || ui.data(|d| d.get_temp(id)).unwrap_or(false);
+    let (down, released, pos) = ui.input(|i| (i.pointer.primary_down(), i.pointer.primary_released(), i.pointer.interact_pos()));
+    ui.data_mut(|d| d.insert_temp(id, down_on && down));
+    response.clicked() || (down_on && released && pos.is_some_and(|p| response.rect.contains(p)))
 }

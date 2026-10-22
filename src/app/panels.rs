@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, size_button};
+use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, pressed, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -134,7 +134,8 @@ impl DeerawApp {
         let button = Vec2::splat(TOOLBAR_ICON_SIZE) + Vec2::new(12.0, 8.0);
         let color = self.background.color();
         self.style_toggle(ui, StyleSection::Background, |ui, open| {
-            color_swatch_sized(ui, open, name, color, button, 18.0).clicked()
+            let response = color_swatch_sized(ui, open, name, color, button, 18.0);
+            pressed(ui, &response)
         });
     }
 
@@ -565,12 +566,11 @@ impl DeerawApp {
     pub(super) fn zoom_indicator(&mut self, ui: &mut egui::Ui, canvas_rect: Rect, ppp: f32) {
         let label = format!("{:.0}%", self.zoom() * 100.0);
         // A fixed width, so the toolbar doesn't change size with the zoom level.
-        let clicked = ui
+        let response = ui
             .add_sized([44.0, TOOLBAR_ICON_SIZE], egui::Label::new(label).sense(Sense::click()))
             .on_hover_cursor(CursorIcon::PointingHand)
-            .on_hover_text("Reset to 100%")
-            .clicked();
-        if clicked {
+            .on_hover_text("Reset to 100%");
+        if pressed(ui, &response) {
             let old_scale = self.zoom() / ppp;
             self.zoom_level = 0;
             self.fit_size = None;
