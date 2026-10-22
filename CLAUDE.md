@@ -152,7 +152,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      blurs; clicking elsewhere deselects) and restyles the selected ones. Dragging an unselected blur with Select moves
      the image under it instead (blurs only take clicks then), so images aren't grabbed by their blurs. Switched to that way, clicking
      anything but a blur goes back to Select (selecting what was clicked; `blur_from_select`) until a
-     new blur is dragged out; chosen with B or the toolbar, it stays. While cropping, the image shows unblurred (on screen only).
+     new blur is dragged out; chosen with B or the toolbar, it stays for more blurs. Either way, clicking empty canvas deselects and goes back to Select. While cropping, the image shows unblurred (on screen only).
    - Text: two modes, both with an alignment and a background (`align`, `fill` on `Kind::Text`; picked in the
      style panel; background transparent by default, or a palette color). Click to place auto-width text:
      one line per Enter, the lines aligned left/center/right by the alignment's x; its rect is the text
