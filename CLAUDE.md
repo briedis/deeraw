@@ -147,9 +147,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      uncropped image, and `follow_blurs` re-derives its `rect` every frame, so it moves, resizes and crops
      with the image; moving/resizing the blur itself updates `area` (`update_blur_areas`). It's inserted
      right above its image, so annotations stay on top. Deleting or cutting an image takes its blurs
-     along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely. Picking a blur with
-     Select (click or drag) switches to the Blur tool, which also selects, moves and resizes blurs (only
-     blurs; clicking elsewhere deselects) and restyles the selected ones. Switched to that way, clicking
+     along; Ctrl+D moves copied blurs onto the copied image. Blurs resize freely. Clicking a blur with
+     Select switches to the Blur tool, which also selects, moves and resizes blurs (only
+     blurs; clicking elsewhere deselects) and restyles the selected ones. Dragging an unselected blur with Select moves
+     the image under it instead (blurs only take clicks then), so images aren't grabbed by their blurs. Switched to that way, clicking
      anything but a blur goes back to Select (selecting what was clicked; `blur_from_select`) until a
      new blur is dragged out; chosen with B or the toolbar, it stays. While cropping, the image shows unblurred (on screen only).
    - Text: two modes, both with an alignment and a background (`align`, `fill` on `Kind::Text`; picked in the

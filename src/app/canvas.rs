@@ -194,7 +194,10 @@ impl DeerawApp {
             let is_blur = matches!(obj.kind, Kind::Blur { .. });
             // Back from a picked blur, other objects take clicks (back to Select), but drags still
             // reach the background to draw a blur.
-            let click_only = blurring && !is_blur && self.blur_from_select;
+            let back_to_select = blurring && !is_blur && self.blur_from_select;
+            // With Select, an unselected blur also takes only clicks, so dragging over one moves
+            // the image under it instead; once clicked (selected), it drags.
+            let click_only = back_to_select || selecting && is_blur && !self.selected.contains(&obj.id);
             if (selecting || blurring && is_blur || click_only) && !editing && hit {
                 let sense = if click_only { Sense::click() } else { Sense::click_and_drag() };
                 let response = ui.interact(rect.expand(ARROW_HIT_DISTANCE), id, sense);
@@ -214,7 +217,7 @@ impl DeerawApp {
                     self.tool = Tool::Blur;
                     self.blur_from_select = true;
                 }
-                if click_only && response.clicked() {
+                if back_to_select && response.clicked() {
                     self.tool = Tool::Select;
                 }
                 if response.double_clicked() {
