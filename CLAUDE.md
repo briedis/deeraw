@@ -110,7 +110,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
      border is within 40pt of the pointer show a circle 16px outside each side's center (clear of the resize handles) (`anchor`);
      an end within 12pt of a circle snaps to it (filled circle) and attaches (`bindings: [start, end]`,
-     a `Binding { id, side }` each). Attached ends follow their object every frame (`follow_bindings`,
+     a `Binding { id, side }` each). Attached ends follow their object every frame; an arrow attached at only one end moves
+     along whole (its free end shifts as much), one attached at both ends stretches (`follow_bindings`,
      also run just before recording undo so both land in one step). Dragging an endpoint away
      detaches it; moving an arrow without its object detaches it (`detach_selected`); Ctrl+D copies
      re-attach to copied objects or detach. Deleting the object leaves the arrow (its binding dangles

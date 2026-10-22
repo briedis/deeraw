@@ -121,7 +121,8 @@ impl DeerawApp {
     }
 
     /// Moves attached arrow endpoints to their objects' anchors. Endpoints whose object is
-    /// gone stay where they are.
+    /// gone stay where they are. An arrow attached at only one end moves along whole instead of
+    /// stretching: its free end follows by as much as the attached one.
     pub(super) fn follow_bindings(&mut self) {
         for i in 0..self.objects.len() {
             let Kind::Arrow { bindings, .. } = self.objects[i].kind else { continue };
@@ -132,8 +133,13 @@ impl DeerawApp {
             });
             let obj = &mut self.objects[i];
             if let Kind::Arrow { start, end, .. } = &mut obj.kind {
-                *start = anchors[0].unwrap_or(*start);
-                *end = anchors[1].unwrap_or(*end);
+                let delta = match anchors {
+                    [Some(a), None] => a - *start,
+                    [None, Some(a)] => a - *end,
+                    _ => Vec2::ZERO,
+                };
+                *start = anchors[0].unwrap_or(*start + delta);
+                *end = anchors[1].unwrap_or(*end + delta);
                 obj.rect = Rect::from_two_pos(*start, *end);
             }
         }
@@ -178,12 +184,29 @@ mod tests {
     }
 
     #[test]
-    fn attached_end_follows_its_object() {
+    fn arrow_attached_at_one_end_moves_with_its_object() {
         let mut app = app_with_arrow_on_text();
         app.objects[0].translate(Vec2::new(10.0, 5.0));
         app.follow_bindings();
         let Kind::Arrow { start, end, .. } = arrow(&app).kind else { unreachable!() };
-        assert_eq!(start, Pos2::ZERO);
+        assert_eq!(start, Pos2::new(10.0, 5.0));
+        assert_eq!(end, anchor(app.objects[0].rect, Side::Left));
+    }
+
+    #[test]
+    fn arrow_attached_at_both_ends_stretches() {
+        let mut app = app_with_arrow_on_text();
+        let rect = Rect::from_min_size(Pos2::new(-100.0, -100.0), Vec2::new(50.0, 20.0));
+        let other = app.add(rect, Kind::Text { text: "yo".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None });
+        let arrow_id = arrow(&app).id;
+        if let Some(Object { kind: Kind::Arrow { bindings, .. }, .. }) = app.objects.iter_mut().find(|o| o.id == arrow_id) {
+            bindings[0] = Some(Binding { id: other, side: Side::Right });
+        }
+        app.follow_bindings();
+        app.objects[0].translate(Vec2::new(10.0, 5.0));
+        app.follow_bindings();
+        let Kind::Arrow { start, end, .. } = arrow(&app).kind else { unreachable!() };
+        assert_eq!(start, anchor(rect, Side::Right));
         assert_eq!(end, anchor(app.objects[0].rect, Side::Left));
     }
 
