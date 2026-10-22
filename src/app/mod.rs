@@ -3,6 +3,7 @@
 mod blur;
 mod canvas;
 mod files;
+mod intro;
 mod menu;
 mod panels;
 #[cfg(any(target_os = "macos", windows))]
@@ -166,6 +167,8 @@ pub struct DeerawApp {
     notice: Option<Notice>,
     /// Last window title sent; see `update_title`.
     title: Option<String>,
+    /// The intro is gone for good: something was added or a tool other than Select picked.
+    intro_dismissed: bool,
     show_about: bool,
     about_logo: Option<egui::TextureHandle>,
     /// Built once: the OS caches custom cursors by buffer identity.

@@ -27,6 +27,11 @@ Build **very incrementally**: one small, runnable step at a time. Each step shou
 Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui's `Modifiers::COMMAND`).
 
 1. **Image canvas** — white canvas (1024×768 window).
+   - The app starts with an intro on the canvas (`app/intro.rs`): the deer (painted as strokes from `assets/deer.svg`'s
+     paths, `paint_deer`, so it takes the background's colors), "Add an image to mark it up", rows for Paste (like
+     Edit > Paste), Take a screenshot (macOS/Windows) and Open an image… (native) with their shortcuts, and a
+     hint that drawing works right away. Only the rows take input. It goes for good (`intro_dismissed`) once
+     there's an object or a tool other than Select is picked; emptying the canvas doesn't bring it back.
    - Ctrl+V pastes an image from the clipboard, centered on the mouse (or canvas center).
      Images with a side over the GPU's texture limit (`max_texture_side`, usually 8192) are scaled
      down to fit (`fit_texture_limit` in files.rs), with a notice; egui panics on bigger textures.
@@ -245,7 +250,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
+  `app/menu.rs` (menu bar, About), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize

@@ -347,6 +347,8 @@ impl DeerawApp {
         if self.space_pan {
             ui.interact(canvas_rect, egui::Id::unique("space-pan"), Sense::drag());
         }
+        // Registered after the background, so its buttons get their clicks.
+        self.intro_ui(ui, canvas_rect);
         let toolbar = self.toolbar(ui, canvas_rect, ppp);
         self.style_panel(ui, toolbar);
         self.update_title(ui.ctx());
