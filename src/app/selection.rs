@@ -77,7 +77,7 @@ impl DeerawApp {
                 painter.circle_stroke(center, POINT_HANDLE_RADIUS, Stroke::new(1.5, SELECTION_COLOR));
             }
             if let Some(pointer) = dragging {
-                self.paint_snap_circles(ui.painter(), Some(pointer), &bindings, &to_screen_pos);
+                self.paint_snap_circles(ui.painter(), Some(pointer), false, &bindings, &to_screen_pos);
                 if let Some(Object { kind: Kind::Arrow { start, end, bindings: b, .. }, .. }) =
                     self.objects.iter_mut().find(|o| o.id == arrow)
                 {

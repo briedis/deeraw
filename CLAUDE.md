@@ -109,6 +109,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      They're grabbed only within 6pt of the line.
      **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
      border is within 40pt of the pointer show a circle 16px outside each side's center (clear of the resize handles) (`anchor`);
+     with the Arrow or Line tool every object shows them, also before a drag (the one under the pointer filled);
      an end within 12pt of a circle snaps to it (filled circle) and attaches (`bindings: [start, end]`,
      a `Binding { id, side }` each). Attached ends follow their object every frame; an arrow attached at only one end moves
      along whole (its free end shifts as much), one attached at both ends stretches (`follow_bindings`,

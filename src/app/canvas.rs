@@ -147,6 +147,7 @@ impl DeerawApp {
         let selecting = self.tool == Tool::Select;
         // The Blur tool also selects, moves and resizes blurs (and only those).
         let blurring = self.tool == Tool::Blur;
+        let arrow_tool = matches!(self.tool, Tool::Arrow | Tool::Line);
         let ctrl = ui.input(|i| i.modifiers.command);
         if !ui.input(|i| i.pointer.primary_down()) {
             self.move_drag = None;
@@ -291,7 +292,7 @@ impl DeerawApp {
                 // Only the Line tool draws lines; connecting objects with Select draws arrows.
                 let heads = if self.tool == Tool::Line { ArrowHeads::NONE } else { self.style.arrow_heads };
                 paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads);
-                self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), bindings, to_screen_pos);
+                self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), arrow_tool, bindings, to_screen_pos);
             }
             Some(Drawing::TextBox(a, b)) => {
                 let rect = Rect::from_two_pos(to_screen_pos(*a), to_screen_pos(*b));
@@ -310,6 +311,13 @@ impl DeerawApp {
                     paint_mosaic(&painter, image, area, self.style.blur, to_screen_pos);
                 }
                 painter.rect_stroke(to_screen(area), 0.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
+            }
+            // The Arrow and Line tools show every snap circle, so it's clear where an arrow can
+            // attach; the one a press would start on is filled.
+            None if arrow_tool => {
+                let pointer = ui.input(|i| i.pointer.hover_pos());
+                let hovered = pointer.and_then(|p| self.snap(p, to_screen_pos)).map(|(binding, _)| binding);
+                self.paint_snap_circles(&painter, pointer, true, &[hovered], to_screen_pos);
             }
             None => {}
         }

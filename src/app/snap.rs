@@ -49,18 +49,20 @@ impl DeerawApp {
             .map(|(binding, p, _)| (binding, p))
     }
 
-    /// Snap circles on the objects near `pointer` (screen) and on those in `active`, which are
-    /// what the endpoints being drawn or dragged are attached to; those circles are filled.
+    /// Snap circles on the objects near `pointer` (screen), or on every object with `all`, and on
+    /// those in `active`, which are what the endpoints being drawn or dragged are attached to;
+    /// those circles are filled.
     pub(super) fn paint_snap_circles(
         &self,
         painter: &Painter,
         pointer: Option<Pos2>,
+        all: bool,
         active: &[Option<Binding>],
         to_screen_pos: impl Fn(Pos2) -> Pos2,
     ) {
         for obj in self.objects.iter().filter(|o| o.bindable()) {
             let rect = Rect::from_min_max(to_screen_pos(obj.rect.min), to_screen_pos(obj.rect.max));
-            let near = pointer.is_some_and(|p| rect.signed_distance_to_pos(p).abs() <= SHOW_DISTANCE);
+            let near = all || pointer.is_some_and(|p| rect.signed_distance_to_pos(p).abs() <= SHOW_DISTANCE);
             let attached = active.iter().flatten().any(|b| b.id == obj.id);
             if !near && !attached {
                 continue;
@@ -84,7 +86,7 @@ impl DeerawApp {
     pub(super) fn connect_ui(&mut self, ui: &egui::Ui, to_canvas: impl Fn(Pos2) -> Pos2, to_screen_pos: impl Fn(Pos2) -> Pos2) {
         let pointer = ui.input(|i| i.pointer.hover_pos());
         if self.drawing.is_none() && ui.ctx().dragged_id().is_none() {
-            self.paint_snap_circles(ui.painter(), pointer, &[], &to_screen_pos);
+            self.paint_snap_circles(ui.painter(), pointer, false, &[], &to_screen_pos);
         }
         // Every circle, shown or not: the pointer is only ever over shown ones, and the one
         // being dragged from must stay registered once the pointer leaves its object.
