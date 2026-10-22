@@ -175,7 +175,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      (`install_fonts`); italic is egui's slant.
    - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only
      while exactly one image is selected) or by double-clicking an image. The whole source image shows dimmed and
-     outlined, the kept part bright with 8 handles that drag its edges/corners freely within the
+     outlined, the kept part bright with 8 handles (white bars with a dark rim, unlike the resize squares:
+     L-shaped brackets at the corners, a bar along each edge; `crop_handle_bars`) that drag its edges/corners freely within the
      source; dragging inside it slides the kept part over the source. Enter, Escape, C, the Crop
      button, clicking elsewhere or switching tools finishes. Non-destructive: images store `uv`
      (the kept part of the texture, 0..1), so recropping can widen it again. After cropping,

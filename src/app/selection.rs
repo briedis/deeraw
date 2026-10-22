@@ -11,6 +11,10 @@ use crate::paint::snap_to_pixels;
 const HANDLE_SIZE: f32 = 8.0;
 /// Radius of an arrow's endpoint handles, in points.
 const POINT_HANDLE_RADIUS: f32 = 5.0;
+/// Length of a crop handle's bars (each arm of a corner bracket, an edge's bar), in points.
+const CROP_HANDLE_LENGTH: f32 = 16.0;
+/// Thickness of a crop handle's bars, in points.
+const CROP_HANDLE_THICKNESS: f32 = 3.0;
 
 impl DeerawApp {
     pub(super) fn selection_handles(
@@ -203,8 +207,9 @@ impl DeerawApp {
                 [screen.min.x, screen.center().x, screen.max.x][(dx + 1) as usize],
                 [screen.min.y, screen.center().y, screen.max.y][(dy + 1) as usize],
             );
-            let handle = Rect::from_center_size(center, Vec2::splat(HANDLE_SIZE));
-            let response = ui.interact(handle.expand(2.0), egui::Id::unique(("crop-handle", id, dx, dy)), Sense::drag());
+            let bars = crop_handle_bars(screen, dx, dy);
+            let hit = bars.iter().fold(Rect::from_center_size(center, Vec2::splat(HANDLE_SIZE + 4.0)), |hit, bar| hit.union(*bar));
+            let response = ui.interact(hit, egui::Id::unique(("crop-handle", id, dx, dy)), Sense::drag());
             let pointer = response.interact_pointer_pos().map(&to_canvas);
             if let (true, Some(p)) = (response.drag_started_by(PointerButton::Primary), pointer) {
                 let handle_pos = kept.lerp_inside(Vec2::new(dx as f32 + 1.0, dy as f32 + 1.0) / 2.0);
@@ -226,12 +231,56 @@ impl DeerawApp {
                     _ => CursorIcon::ResizeNeSw,
                 });
             }
-            painter.rect_filled(handle, 2.0, Color32::WHITE);
-            painter.rect_stroke(handle, 2.0, Stroke::new(1.0, SELECTION_COLOR), StrokeKind::Inside);
+            // White with a dark rim, so it shows on light and dark images alike.
+            for bar in &bars {
+                painter.rect_filled(bar.expand(1.0), 0.0, Color32::from_black_alpha(160));
+            }
+            for bar in &bars {
+                painter.rect_filled(*bar, 0.0, Color32::WHITE);
+            }
         }
         *uv = crop_uv(full, *kept);
         // Corner resizing keeps the cropped part's undistorted proportions.
         let [w, h] = texture.size();
         *aspect = (uv.width() * w as f32) / (uv.height() * h as f32);
+    }
+}
+
+/// The bars a crop handle is drawn with, inside the kept part's screen rect: an L-shaped
+/// bracket at a corner, one bar along the edge at an edge's midpoint. They shrink on small
+/// crops so neighbouring handles don't run into each other.
+fn crop_handle_bars(screen: Rect, dx: i32, dy: i32) -> Vec<Rect> {
+    let length = CROP_HANDLE_LENGTH.min(screen.width() / 3.0).min(screen.height() / 3.0);
+    let t = CROP_HANDLE_THICKNESS;
+    let (sx, sy) = (dx as f32, dy as f32);
+    let x = [screen.min.x, screen.center().x, screen.max.x][(dx + 1) as usize];
+    let y = [screen.min.y, screen.center().y, screen.max.y][(dy + 1) as usize];
+    let corner = Pos2::new(x, y);
+    match (dx, dy) {
+        (0, _) => vec![Rect::from_two_pos(Pos2::new(x - length / 2.0, y), Pos2::new(x + length / 2.0, y - sy * t))],
+        (_, 0) => vec![Rect::from_two_pos(Pos2::new(x, y - length / 2.0), Pos2::new(x - sx * t, y + length / 2.0))],
+        _ => vec![
+            Rect::from_two_pos(corner, corner - Vec2::new(sx * length, sy * t)),
+            Rect::from_two_pos(corner, corner - Vec2::new(sx * t, sy * length)),
+        ],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crop_handle_bars_sit_inside_the_kept_part() {
+        let screen = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(200.0, 100.0));
+        for (dx, dy) in [(-1, -1), (1, -1), (-1, 1), (1, 1), (0, -1), (0, 1), (-1, 0), (1, 0)] {
+            for bar in crop_handle_bars(screen, dx, dy) {
+                assert!(screen.contains_rect(bar), "{dx},{dy}: {bar:?}");
+            }
+        }
+        // Top-left corner: a horizontal and a vertical arm from the corner.
+        let [h, v] = crop_handle_bars(screen, -1, -1)[..] else { panic!() };
+        assert_eq!(h, Rect::from_min_size(screen.min, Vec2::new(CROP_HANDLE_LENGTH, CROP_HANDLE_THICKNESS)));
+        assert_eq!(v, Rect::from_min_size(screen.min, Vec2::new(CROP_HANDLE_THICKNESS, CROP_HANDLE_LENGTH)));
     }
 }
