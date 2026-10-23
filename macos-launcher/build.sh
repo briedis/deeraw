@@ -3,9 +3,11 @@
 # binary into Deeraw.app/Contents/Library/LoginItems, so it doesn't show up in Spotlight on its own, and
 # re-signs Deeraw.app. It registers itself as a login item on first launch.
 # Usage: build.sh [Deeraw.app]   (default /Applications/Deeraw.app; its icon and version are used for the launcher)
+# Signs with the identity in $SIGN_ID (name or SHA-1 of a code signing certificate), or ad-hoc if unset.
 # The menu bar PNGs are committed; after editing menubar-deer.svg, regenerate them with
 # rsvg-convert -w 18 -h 18 menubar-deer.svg -o menubar-deer.png (and -w 36 -h 36 for @2x).
 set -e
+SIGN_ID="${SIGN_ID:--}"
 DEERAW="$(cd "${1:-/Applications/Deeraw.app}" && pwd)"
 APP="$DEERAW/Contents/Library/LoginItems/Deeraw Launcher.app"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$DEERAW/Contents/Info.plist")
@@ -38,7 +40,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --deep --sign - "$APP"
+codesign --force --deep --sign "$SIGN_ID" "$APP"
 # Deeraw.app's signature covers its contents, so adding the launcher invalidated it.
-codesign --force --sign - "$DEERAW"
+codesign --force --sign "$SIGN_ID" "$DEERAW"
 echo "Built $APP"

@@ -51,6 +51,28 @@ jobs:
       - run: |
           cargo build --release --target aarch64-apple-darwin
           cargo build --release --target x86_64-apple-darwin
+      # Signing with the same certificate every build lets macOS keep the Screen Recording permission
+      # across updates (an ad-hoc signature is identified by its hash, which changes each build).
+      # Without the secrets (e.g. pull requests from forks) the app is signed ad-hoc.
+      - name: Import signing certificate
+        env:
+          P12: ${{ secrets.MACOS_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        if: env.P12 != ''
+        run: |
+          KC=$RUNNER_TEMP/signing.keychain-db
+          security create-keychain -p ci "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p ci "$KC"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KC" >/dev/null
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # By SHA-1, since codesign won't pick an untrusted self-signed identity by name.
+          SIGN_ID=$(security find-identity "$KC" | awk '/Deeraw Signing/ {print $2; exit}')
+          test -n "$SIGN_ID"
+          echo "SIGN_ID=$SIGN_ID" >> "$GITHUB_ENV"
       - name: Bundle Deeraw.app
         run: |
           VERSION=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
@@ -91,11 +113,10 @@ jobs:
           </plist>
           EOF
 
-          # Menu bar launcher, inside Deeraw.app (Contents/Library/LoginItems).
+          # Menu bar launcher, inside Deeraw.app (Contents/Library/LoginItems). It also signs Deeraw.app
+          # with $SIGN_ID (ad-hoc if unset: Apple Silicon refuses to run unsigned binaries at all).
           sh macos-launcher/build.sh "$APP"
-
-          # Ad-hoc signature: Apple Silicon refuses to run unsigned binaries at all.
-          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict "$APP"
 
           mkdir out
           mv "$APP" out/
@@ -119,3 +140,19 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+      # Points the cask in briedis/homebrew-tap at the new release. HOMEBREW_TAP_TOKEN is a fine-grained
+      # token with Contents read/write on that repo (github.token can't push to other repos).
+      - name: Bump Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        if: env.TAP_TOKEN != ''
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          SHA=$(sha256sum dist/deeraw-macos-universal.zip | cut -d' ' -f1)
+          git clone "https://x-access-token:$TAP_TOKEN@github.com/briedis/homebrew-tap.git" tap
+          cd tap
+          sed -i -E "s/^(\s*version )\"[^\"]*\"/\1\"$VERSION\"/; s/^(\s*sha256 )\"[^\"]*\"/\1\"$SHA\"/" Casks/deeraw.rb
+          git diff --stat
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -am "deeraw $VERSION"
+          git push

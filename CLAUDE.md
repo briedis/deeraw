@@ -308,9 +308,16 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip, the launcher inside) on every push/PR; a `v*` tag publishes a release.
 - Homebrew: `brew install --cask briedis/tap/deeraw`, from the tap repo https://github.com/briedis/homebrew-tap
   (`Casks/deeraw.rb`, installs `Deeraw.app` from the release's macOS zip and strips its quarantine flag, since
-  it's only ad-hoc signed; homebrew/cask itself requires notarized apps). After each release, bump `version`
-  and `sha256` there by hand (`shasum -a 256` of `deeraw-macos-universal.zip`). Release steps: bump `version` in
-  Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must be annotated here), push the tag.
+  it isn't notarized; homebrew/cask itself requires notarized apps). The release job bumps `version` and `sha256`
+  there itself (needs the `HOMEBREW_TAP_TOKEN` secret, a fine-grained token with Contents read/write on the tap;
+  skipped without it). Release steps: bump `version` in Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must
+  be annotated here), push the tag.
+- macOS signing: CI signs Deeraw.app and the launcher with a self-signed "Deeraw Signing" code signing certificate
+  (secrets `MACOS_CERT_P12`, base64 of the .p12, and `MACOS_CERT_PASSWORD`; imported into a temporary keychain,
+  used by SHA-1 as `SIGN_ID`, which `macos-launcher/build.sh` signs with). The same certificate on every build lets
+  macOS keep the Screen Recording permission across updates (ad-hoc signatures are identified by their hash,
+  which changes each build). Without the secrets it signs ad-hoc. Losing the certificate means users grant
+  the permission again once.
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   lives inside Deeraw.app (`Contents/Library/LoginItems/Deeraw Launcher.app`, so Spotlight doesn't list it) and
   shows the deer in the menu bar; left click takes a screenshot in the Deeraw.app it's in, right click shows
