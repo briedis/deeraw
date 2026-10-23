@@ -259,7 +259,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - App icon: `assets/deer.svg` is the source (dark variant: #242424 rounded square, white deer drawn as
   round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow) renders it
   to `assets/icon.ico` (16–256px), embedded in the exe by `build.rs` (winresource, needs the Windows
-  SDK's rc.exe), and `assets/icon.png` (256px), the window/taskbar icon (`with_icon`).
+  SDK's rc.exe), `assets/icon.png` (256px), the window/taskbar icon (`with_icon`), and the MSIX logos in `msix/Assets`.
 - Objects (`Object { id, rect, kind }`) have a `rect` in canvas pixels, so a fresh image paste
   displays 1:1 at 100% zoom. View transform: `screen = panel_min + pan + canvas * scale`, with
   `scale = zoom / pixels_per_point` (screen points per canvas pixel); the closures `to_screen_pos`,
@@ -306,6 +306,15 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   `Error: Wgpu(RequestDeviceError(... Device(Lost)))` and no window.
 - Release builds use `windows_subsystem = "windows"` (no console window); debug builds keep the console.
 - CI: `.github/workflows/build.yml` builds Windows (x64 zip) and macOS (universal `Deeraw.app` zip, the launcher inside) on every push/PR; a `v*` tag publishes a release.
+- Microsoft Store: `msix/build.ps1` packages `target\release\deeraw.exe` as `deeraw-windows-x64.msix` (full-trust
+  desktop app; `msix/AppxManifest.xml` with `$...$` placeholders, the logos in `msix/Assets` named for makepri's
+  scale/targetsize qualifiers, one `resources.pri`). Version is Cargo.toml's plus `.0` (the Store wants the 4th
+  part 0). The identity comes from Partner Center (Product identity): `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER`
+  (`CN=...`) and `MSIX_PUBLISHER_DISPLAY_NAME`, repository variables in CI; without them it builds a test
+  package (`Deeraw`, `CN=Deeraw`, display name from `authors`). Unsigned, since the Store signs it, so CI only
+  uploads it as a workflow artifact, not to the release. To try it locally (Developer Mode):
+  `Add-AppxPackage -Register $env:TEMP\deeraw-msix\AppxManifest.xml` after building, `Remove-AppxPackage` to undo.
+  Packaged, `%APPDATA%` writes (settings, crash reports) go to `%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming`.
 - Homebrew: `brew install --cask briedis/tap/deeraw`, from the tap repo https://github.com/briedis/homebrew-tap
   (`Casks/deeraw.rb`, installs `Deeraw.app` from the release's macOS zip and strips its quarantine flag, since
   it isn't notarized; homebrew/cask itself requires notarized apps). The release job bumps `version` and `sha256`

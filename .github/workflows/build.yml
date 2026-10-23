@@ -38,6 +38,20 @@ jobs:
         with:
           name: deeraw-windows-x64
           path: deeraw-windows-x64.zip
+      # Microsoft Store package. Unsigned: the Store signs it on submission, so it's a workflow artifact
+      # to upload in Partner Center, not part of the GitHub release. The identity is the app's in
+      # Partner Center (Product identity), set as repository variables.
+      - name: Package MSIX
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        shell: pwsh
+        run: ./msix/build.ps1
+      - uses: actions/upload-artifact@v6
+        with:
+          name: deeraw-windows-x64-msix
+          path: deeraw-windows-x64.msix
 
   macos:
     runs-on: macos-latest
