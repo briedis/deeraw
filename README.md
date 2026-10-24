@@ -68,18 +68,18 @@ For the web build, install [Trunk](https://trunkrs.dev) and the `wasm32-unknown-
 
 Every push builds Windows and macOS on GitHub Actions (`.github/workflows/build.yml`). To publish a release:
 
-1. Bump `version` in `Cargo.toml` (the macOS app's version comes from it) and commit.
+1. Bump `version` in `Cargo.toml` (the macOS app's version comes from it), and in [CHANGELOG.md](CHANGELOG.md)
+   rename `## Unreleased` to `## 0.4.0 (date)`. Commit.
 2. Tag it with an annotated tag and push both:
    ```sh
-   git tag -a v0.4.0 -m "Deeraw 0.4.0"
+   git tag -a v0.4.0 -m "Version 0.4.0"
    git push && git push origin v0.4.0
    ```
-   The tag's build publishes a GitHub release with both zips.
-3. Update the Homebrew cask in [briedis/homebrew-tap](https://github.com/briedis/homebrew-tap)
-   (`Casks/deeraw.rb`): set `version` and `sha256`, which you get with
-   ```sh
-   curl -sL https://github.com/briedis/deeraw/releases/download/v0.4.0/deeraw-macos-universal.zip | shasum -a 256
-   ```
+   The tag's build publishes a GitHub release with the zips and the Store's MSIX, its notes taken from the
+   changelog, and updates the Homebrew cask in [briedis/homebrew-tap](https://github.com/briedis/homebrew-tap).
+3. Submit the release's `deeraw-windows-x64.msix` in Partner Center as a Store update.
+
+See [CHANGELOG.md](CHANGELOG.md) for what changed in each release.
 
 ## License
 

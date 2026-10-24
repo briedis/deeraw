@@ -142,13 +142,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v6
         with:
           path: dist
           merge-multiple: true
+      # The notes are the version's section of CHANGELOG.md ("## 1.2.3 (date)"), or GitHub's generated ones without it.
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.msix --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          awk -v v="${GITHUB_REF_NAME#v}" '/^## /{p = index($0, "## " v " ") == 1; next} p' CHANGELOG.md | sed '/./,$!d' > notes.md
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.msix --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "${notes[@]}"
       # Points the cask in briedis/homebrew-tap at the new release. HOMEBREW_TAP_TOKEN is a fine-grained
       # token with Contents read/write on that repo (github.token can't push to other repos).
       - name: Bump Homebrew cask

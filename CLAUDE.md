@@ -319,8 +319,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (`Casks/deeraw.rb`, installs `Deeraw.app` from the release's macOS zip and strips its quarantine flag, since
   it isn't notarized; homebrew/cask itself requires notarized apps). The release job bumps `version` and `sha256`
   there itself (needs the `HOMEBREW_TAP_TOKEN` secret, a fine-grained token with Contents read/write on the tap;
-  skipped without it). Release steps: bump `version` in Cargo.toml, commit, `git tag -a vX.Y.Z -m ...` (tags must
-  be annotated here), push the tag.
+  skipped without it). Release steps: bump `version` in Cargo.toml, rename `## Unreleased` in CHANGELOG.md to
+  `## X.Y.Z (date)`, commit, `git tag -a vX.Y.Z -m ...` (tags must be annotated here), push the tag. The release's
+  notes are that changelog section.
+- CHANGELOG.md: user-facing changes per release, newest first. Add a line under `## Unreleased` (create it if
+  missing) with each commit that changes what users see or get; internal changes (refactors, docs, CI) stay out.
 - macOS signing: CI signs Deeraw.app and the launcher with a self-signed "Deeraw Signing" code signing certificate
   (secrets `MACOS_CERT_P12`, base64 of the .p12, and `MACOS_CERT_PASSWORD`; imported into a temporary keychain,
   used by SHA-1 as `SIGN_ID`, which `macos-launcher/build.sh` signs with). The same certificate on every build lets
