@@ -151,6 +151,7 @@ impl DeerawApp {
         let ctrl = ui.input(|i| i.modifiers.command);
         if !ui.input(|i| i.pointer.primary_down()) {
             self.move_drag = None;
+            self.riders.clear();
             self.guides.clear();
         }
         // Dragging any selected object moves all of them; applied after the loop.
@@ -246,6 +247,10 @@ impl DeerawApp {
             // The selection's bounds snap to line up their center with other objects' centers;
             // only if it's all images, text and shapes (blurs, strokes and arrows move freely).
             self.detach_selected();
+            // What's on a moved image moves along, unless Alt is held (decided when the move starts).
+            if self.move_drag.is_none() && !ui.input(|i| i.modifiers.alt) {
+                self.riders = self.riders();
+            }
             let (dragged, moved) = self.move_drag.unwrap_or_default();
             let dragged = dragged + move_by;
             let selected = || self.objects.iter().filter(|o| self.selected.contains(&o.id));
@@ -253,7 +258,7 @@ impl DeerawApp {
             let targets = if selected().all(|o| o.bindable()) { align_candidates(bounds, &self.align_targets(ui.ctx())) } else { vec![] };
             let snap = align_offset(bounds.translate(dragged - moved), &targets, ALIGN_DISTANCE / scale);
             let delta = dragged + snap - moved;
-            for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id)) {
+            for obj in self.objects.iter_mut().filter(|o| self.selected.contains(&o.id) || self.riders.contains(&o.id)) {
                 obj.translate(delta);
             }
             self.move_drag = Some((dragged, dragged + snap));

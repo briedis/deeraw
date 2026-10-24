@@ -63,6 +63,16 @@ pub fn centered_on(rect: Rect, targets: &[Rect]) -> [bool; 2] {
     [0, 1].map(|axis| targets.iter().any(|t| (t.center()[axis] - rect.center()[axis]).abs() < 0.01))
 }
 
+/// Whether at least half of `rect`'s area is inside `base` (its center, for a rect without
+/// area, like a straight line's).
+pub fn mostly_inside(rect: Rect, base: Rect) -> bool {
+    if rect.area() < 1.0 {
+        return base.contains(rect.center());
+    }
+    let overlap = rect.intersect(base);
+    overlap.is_positive() && overlap.area() >= rect.area() / 2.0
+}
+
 /// Guide lines (canvas pixels) through the centers wherever `rect`'s center lines up with one
 /// of `targets`', each spanning both rects.
 pub fn align_guides(rect: Rect, targets: &[Rect]) -> Vec<[Pos2; 2]> {
@@ -172,6 +182,18 @@ pub fn resize_to(start: Rect, dx: i32, dy: i32, target: Pos2, aspect: Option<f32
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mostly_inside_needs_half_the_area() {
+        let base = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 100.0));
+        let rect = |x: f32| Rect::from_min_size(Pos2::new(x, 10.0), Vec2::new(40.0, 10.0));
+        assert!(mostly_inside(rect(80.0), base));
+        assert!(!mostly_inside(rect(81.0), base));
+        assert!(!mostly_inside(rect(200.0), base));
+        let line = Rect::from_two_pos(Pos2::new(90.0, 50.0), Pos2::new(130.0, 50.0));
+        assert!(!mostly_inside(line, base));
+        assert!(mostly_inside(line.translate(Vec2::new(-30.0, 0.0)), base));
+    }
 
     #[test]
     fn distance_to_shape_outlines() {

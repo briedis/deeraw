@@ -27,7 +27,7 @@ impl DeerawApp {
         if ctx.input(|i| i.modifiers.alt) {
             return vec![];
         }
-        self.objects.iter().filter(|o| o.bindable() && !self.selected.contains(&o.id)).map(|o| o.rect).collect()
+        self.objects.iter().filter(|o| o.bindable() && !self.selected.contains(&o.id) && !self.riders.contains(&o.id)).map(|o| o.rect).collect()
     }
 
     pub(super) fn paint_guides(&self, painter: &Painter, to_screen_pos: impl Fn(Pos2) -> Pos2) {

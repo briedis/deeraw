@@ -17,6 +17,7 @@ use std::sync::Arc;
 use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Vec2};
 
 use crate::export::Export;
+use crate::geometry::mostly_inside;
 use crate::history::History;
 use crate::object::{Binding, Kind, Object};
 use crate::style::{Background, Style, StyleSection};
@@ -116,6 +117,8 @@ pub struct DeerawApp {
     /// While moving the selection: how far it was dragged and how far it was actually moved
     /// (with alignment snapping) since the drag started, canvas pixels.
     move_drag: Option<(Vec2, Vec2)>,
+    /// Objects moved along with the selection by that move; see `riders`.
+    riders: Vec<u64>,
     /// The image pasted or opened onto an empty canvas, until it's moved: it resizes from its
     /// center, so it stays centered where the window was fitted to it.
     first_image: Option<u64>,
@@ -331,6 +334,29 @@ impl DeerawApp {
         self.update_blur_areas();
     }
 
+    /// The unselected objects on a selected image, which moving it takes along: above it, at least
+    /// half inside it, and it's the topmost image they're on. Nested, so an image on an image takes
+    /// its own along. Blurs follow their image anyway, and attached arrows their objects.
+    fn riders(&self) -> Vec<u64> {
+        let mut moving = self.selected.clone();
+        let mut riders = vec![];
+        for (i, obj) in self.objects.iter().enumerate() {
+            let attached = matches!(obj.kind, Kind::Arrow { bindings, .. } if bindings.iter().any(Option::is_some));
+            if moving.contains(&obj.id) || obj.blurred_image().is_some() || attached {
+                continue;
+            }
+            let base = self.objects[..i]
+                .iter()
+                .rev()
+                .find(|o| matches!(o.kind, Kind::Image { .. }) && mostly_inside(obj.rect, o.rect));
+            if base.is_some_and(|b| moving.contains(&b.id)) {
+                moving.push(obj.id);
+                riders.push(obj.id);
+            }
+        }
+        riders
+    }
+
     /// Adds an object on top and selects it.
     fn add(&mut self, rect: Rect, kind: Kind) -> u64 {
         let id = self.next_id;
@@ -384,6 +410,33 @@ mod tests {
         assert_eq!(app.selected, [1, 3]);
         app.click_select(3, false);
         assert_eq!(app.selected, [3]);
+    }
+
+    #[test]
+    fn riders_are_the_objects_on_a_selected_image() {
+        let ctx = egui::Context::default();
+        let mut app = DeerawApp::default();
+        let rect = |x: f32, y: f32, w: f32| Rect::from_min_size(Pos2::new(x, y), Vec2::splat(w));
+        let image = |app: &mut DeerawApp, r: Rect| {
+            app.add_image(&ctx, Arc::new(ColorImage::filled([10, 10], Color32::RED)), Pos2::ZERO);
+            app.objects.last_mut().unwrap().rect = r;
+            app.objects.last().unwrap().id
+        };
+        let stroke = || Kind::Stroke { points: vec![], pressures: vec![], color: Color32::BLACK, width: 2.0, hand_drawn: false };
+        let below = app.add(rect(10.0, 10.0, 20.0), stroke());
+        let big = image(&mut app, rect(0.0, 0.0, 100.0));
+        let on_big = app.add(rect(10.0, 10.0, 20.0), stroke());
+        let mostly_off = app.add(rect(91.0, 10.0, 20.0), stroke());
+        let small = image(&mut app, rect(50.0, 50.0, 40.0));
+        let on_small = app.add(rect(60.0, 60.0, 10.0), stroke());
+        let elsewhere = image(&mut app, rect(300.0, 0.0, 100.0));
+        let _ = (below, mostly_off, elsewhere);
+        app.selected = vec![big];
+        assert_eq!(app.riders(), [on_big, small, on_small]);
+        app.selected = vec![small];
+        assert_eq!(app.riders(), [on_small]);
+        app.selected = vec![on_big];
+        assert!(app.riders().is_empty());
     }
 
     /// In-memory stand-in for eframe's file storage.

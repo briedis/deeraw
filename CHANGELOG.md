@@ -4,6 +4,7 @@ What changed in each release. Ctrl means Cmd on macOS.
 
 ## Unreleased
 
+- Moving an image takes along the text, drawings, shapes and images on it (hold Alt to move just the image).
 - The privacy policy now covers Microsoft Store installs and allows a check for new versions on GitHub.
 
 ## 0.6.2 (2026-10-24)

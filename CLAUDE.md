@@ -75,6 +75,12 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (`ResizeDrag::centered`, `centered_on`), so it stays lined up; resize handles don't snap.
    Only objects at least about as big count (`align_candidates`: the moved one's area at most 1.25×
    theirs), so a big object isn't pulled onto small ones, while small ones still line up with it.
+   **Riding along:** moving an image moves what's on it (`riders`, decided when the move starts; `riders` field):
+   unselected objects above it with at least half their area inside it (`mostly_inside`; a line's center), when it's
+   the topmost image they're on. Nested, so an image on an image takes its own along. Blurs follow their image anyway
+   and attached arrows their objects, so they're left out. Alt moves just the selection. Riders don't count as
+   alignment targets. No stored link: moving an annotation off an image unlinks it. Resizing or deleting the image
+   leaves them be.
    Min size 4px. Delete or Backspace removes the selected object(s); Ctrl+D duplicates them (copies offset by
    20px, on top, and selected). Ctrl+A selects everything (and switches to Select).
    **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
