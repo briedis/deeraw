@@ -1,19 +1,18 @@
 # Packages target\release\deeraw.exe as deeraw-windows-x64.msix for the Microsoft Store (which signs it).
 # Run from the repo root after `cargo build --release`: powershell -File msix\build.ps1
-# The identity comes from Partner Center (Product identity page); the defaults only make a test package.
+# The identity is the app's in Partner Center (Product identity page).
 param(
-    [string]$IdentityName = $(if ($env:MSIX_IDENTITY_NAME) { $env:MSIX_IDENTITY_NAME } else { "Deeraw" }),
-    [string]$Publisher = $(if ($env:MSIX_PUBLISHER) { $env:MSIX_PUBLISHER } else { "CN=Deeraw" }),
-    [string]$PublisherDisplayName = $env:MSIX_PUBLISHER_DISPLAY_NAME,
+    [string]$IdentityName = "Briedis.Deeraw",
+    [string]$Publisher = "CN=5063D15F-3615-403A-8689-C049FF108DAF",
+    [string]$PublisherDisplayName = "Briedis",
     [string]$Out = "deeraw-windows-x64.msix"
 )
 $ErrorActionPreference = "Stop"
 
-# cargo prints UTF-8 (the author's name isn't ASCII); Windows PowerShell would read it as the OEM code page.
+# cargo prints UTF-8; Windows PowerShell would read it as the OEM code page.
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
 $meta = cargo metadata --no-deps --format-version 1 | ConvertFrom-Json
 $package = $meta.packages[0]
-if (-not $PublisherDisplayName) { $PublisherDisplayName = $package.authors[0] }
 # MSIX versions have four parts; the Store requires the last to be 0.
 $version = "$($package.version -replace '-.*$', '').0"
 

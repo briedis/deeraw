@@ -309,9 +309,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 - Microsoft Store: `msix/build.ps1` packages `target\release\deeraw.exe` as `deeraw-windows-x64.msix` (full-trust
   desktop app; `msix/AppxManifest.xml` with `$...$` placeholders, the logos in `msix/Assets` named for makepri's
   scale/targetsize qualifiers, one `resources.pri`). Version is Cargo.toml's plus `.0` (the Store wants the 4th
-  part 0). The identity comes from Partner Center (Product identity): `MSIX_IDENTITY_NAME`, `MSIX_PUBLISHER`
-  (`CN=...`) and `MSIX_PUBLISHER_DISPLAY_NAME`, repository variables in CI; without them it builds a test
-  package (`Deeraw`, `CN=Deeraw`, display name from `authors`). Unsigned, since the Store signs it, so CI only
+  part 0). The identity (`Briedis.Deeraw`, publisher `CN=5063D15F-...`, display name `Briedis`) is the app's in
+  Partner Center (Product identity), as `build.ps1`'s parameter defaults. Store ID `9PNMW6XTFLBM`,
+  https://apps.microsoft.com/detail/9PNMW6XTFLBM. Unsigned, since the Store signs it, so CI only
   uploads it as a workflow artifact, not to the release. To try it locally (Developer Mode):
   `Add-AppxPackage -Register $env:TEMP\deeraw-msix\AppxManifest.xml` after building, `Remove-AppxPackage` to undo.
   Packaged, `%APPDATA%` writes (settings, crash reports) go to `%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming`.
