@@ -311,8 +311,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   scale/targetsize qualifiers, one `resources.pri`). Version is Cargo.toml's plus `.0` (the Store wants the 4th
   part 0). The identity (`Briedis.Deeraw`, publisher `CN=5063D15F-...`, display name `Briedis`) is the app's in
   Partner Center (Product identity), as `build.ps1`'s parameter defaults. Store ID `9PNMW6XTFLBM`,
-  https://apps.microsoft.com/detail/9PNMW6XTFLBM. Unsigned, since the Store signs it, so CI only
-  uploads it as a workflow artifact, not to the release. To try it locally (Developer Mode):
+  https://apps.microsoft.com/detail/9PNMW6XTFLBM. Unsigned, since the Store signs it; CI attaches it
+  to the GitHub release, to download and upload as a new Partner Center submission. To try it locally (Developer Mode):
   `Add-AppxPackage -Register $env:TEMP\deeraw-msix\AppxManifest.xml` after building, `Remove-AppxPackage` to undo.
   Packaged, `%APPDATA%` writes (settings, crash reports) go to `%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming`.
 - Homebrew: `brew install --cask briedis/tap/deeraw`, from the tap repo https://github.com/briedis/homebrew-tap

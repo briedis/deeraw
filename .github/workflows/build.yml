@@ -38,8 +38,8 @@ jobs:
         with:
           name: deeraw-windows-x64
           path: deeraw-windows-x64.zip
-      # Microsoft Store package. Unsigned: the Store signs it on submission, so it's a workflow artifact
-      # to upload in Partner Center, not part of the GitHub release.
+      # Microsoft Store package, attached to the release for uploading in Partner Center. Unsigned: the Store
+      # signs it on submission (so it can't be installed from the release directly).
       - name: Package MSIX
         shell: pwsh
         run: ./msix/build.ps1
@@ -148,7 +148,7 @@ jobs:
           merge-multiple: true
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/*.zip dist/*.msix --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
       # Points the cask in briedis/homebrew-tap at the new release. HOMEBREW_TAP_TOKEN is a fine-grained
       # token with Contents read/write on that repo (github.token can't push to other repos).
       - name: Bump Homebrew cask
