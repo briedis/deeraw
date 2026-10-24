@@ -87,4 +87,4 @@ Every push builds Windows and macOS on GitHub Actions (`.github/workflows/build.
 
 ## Privacy
 
-Deeraw collects no data and makes no network requests; see [PRIVACY.md](PRIVACY.md).
+Deeraw collects no data; at most it may check GitHub for a newer version. See [PRIVACY.md](PRIVACY.md).

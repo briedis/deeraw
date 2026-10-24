@@ -1,10 +1,11 @@
 # Privacy Policy
 
-_Last updated: October 21, 2026_
+_Last updated: October 24, 2026_
 
 Deeraw is a drawing app that runs entirely on your device. It does not collect, send or sell any
-personal data. It has no accounts, analytics, telemetry, ads or tracking, and it makes no network
-requests of its own.
+personal data. It has no accounts, analytics, telemetry, ads or tracking. The only network request
+it may make of its own is a check for a newer version (see below); your drawings never leave your
+device unless you save, copy or share them yourself.
 
 ## What stays on your device
 
@@ -34,6 +35,22 @@ has stored.
     Snipping Tool may save it according to its own settings; see Microsoft's privacy statement.
 - Blur pixelates part of an image on the canvas and in exports. The original image is kept while you
   edit (so a blur can be moved or removed), but exported PNGs contain only the pixelated version.
+
+## Update check
+
+Deeraw may check whether a newer version is available by asking GitHub for the latest Deeraw release
+(the public page at https://github.com/briedis/deeraw/releases). This request contains nothing about
+you or your drawings, and no identifier: only what any web request carries, such as your IP address
+and the app's name and version. GitHub's privacy statement covers what GitHub does with it. The answer
+is used only to tell you that an update exists; Deeraw doesn't download or install anything without
+you choosing to.
+
+## Microsoft Store
+
+If you install Deeraw from the Microsoft Store, Microsoft handles the download and updates, and may
+share aggregated, anonymous reports with the developer (such as install counts and crash reports from
+Windows Error Reporting, depending on your Windows diagnostic settings). That is covered by Microsoft's
+privacy statement; Deeraw itself sends nothing.
 
 ## Links
 
