@@ -25,6 +25,10 @@ impl DeerawApp {
                     self.save_as();
                 }
                 ui.separator();
+                if menu_item(ui, "Preferences…", command(Key::Comma), true) {
+                    self.show_preferences = true;
+                }
+                ui.separator();
                 if menu_item(ui, "Exit", command(Key::W), true) {
                     ui.send_viewport_cmd(ViewportCommand::Close);
                 }

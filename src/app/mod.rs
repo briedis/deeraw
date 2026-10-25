@@ -6,6 +6,8 @@ mod files;
 mod intro;
 mod menu;
 mod panels;
+#[cfg(not(target_arch = "wasm32"))]
+mod preferences;
 #[cfg(any(target_os = "macos", windows))]
 mod screenshot;
 mod selection;
@@ -53,6 +55,22 @@ struct Settings {
     skipped_version: Option<String>,
     /// "Remind me later": no update window on launch before this (Unix seconds).
     update_reminder: Option<i64>,
+    preferences: Preferences,
+}
+
+/// What File > Preferences… sets.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+struct Preferences {
+    /// Start a screenshot when Deeraw opens, as the launcher's `--screenshot` does.
+    screenshot_on_launch: bool,
+    check_for_updates: bool,
+}
+
+impl Default for Preferences {
+    fn default() -> Self {
+        Self { screenshot_on_launch: false, check_for_updates: true }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -180,6 +198,10 @@ pub struct DeerawApp {
     intro_dismissed: bool,
     show_about: bool,
     show_changelog: bool,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    show_preferences: bool,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    preferences: Preferences,
     /// The launch update check was started.
     #[cfg(not(target_arch = "wasm32"))]
     update_started: bool,
@@ -218,37 +240,48 @@ pub struct DeerawApp {
 
 impl DeerawApp {
     pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
-        let Settings { style, background, save_dir, skipped_version, update_reminder } =
-            storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
+        let settings = storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
         let paste_on_start = std::env::args().any(|a| a == "--paste");
         #[cfg(any(target_os = "macos", windows))]
         let screenshot_on_start = std::env::args().any(|a| a == "--screenshot");
-        Self {
-            style,
-            background,
-            save_dir,
-            skipped_version,
-            update_reminder,
-            paste_on_start,
-            #[cfg(any(target_os = "macos", windows))]
-            screenshot_until: screenshot_on_start.then_some(SCREENSHOT_START_FRAMES),
-            #[cfg(any(target_os = "macos", windows))]
-            screenshot_new_drawing: screenshot_on_start,
-            ..Default::default()
+        let mut app = Self { paste_on_start, ..Default::default() };
+        app.apply_settings(settings);
+        #[cfg(any(target_os = "macos", windows))]
+        {
+            // The preference adds the screenshot to the (empty) canvas; the launcher's starts a new drawing.
+            if screenshot_on_start || app.preferences.screenshot_on_launch {
+                app.screenshot_until = Some(SCREENSHOT_START_FRAMES);
+            }
+            app.screenshot_new_drawing = screenshot_on_start;
         }
+        app
     }
-}
 
-impl eframe::App for DeerawApp {
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        let settings = Settings {
+    fn settings(&self) -> Settings {
+        Settings {
             style: self.style,
             background: self.background,
             save_dir: self.save_dir.clone(),
             skipped_version: self.skipped_version.clone(),
             update_reminder: self.update_reminder,
-        };
-        eframe::set_value(storage, SETTINGS_KEY, &settings);
+            preferences: self.preferences,
+        }
+    }
+
+    fn apply_settings(&mut self, settings: Settings) {
+        let Settings { style, background, save_dir, skipped_version, update_reminder, preferences } = settings;
+        self.style = style;
+        self.background = background;
+        self.save_dir = save_dir;
+        self.skipped_version = skipped_version;
+        self.update_reminder = update_reminder;
+        self.preferences = preferences;
+    }
+}
+
+impl eframe::App for DeerawApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, SETTINGS_KEY, &self.settings());
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -302,6 +335,8 @@ impl eframe::App for DeerawApp {
             .show(ui, |ui| self.canvas(ui));
         self.about_window(ui.ctx());
         self.changelog_window(ui.ctx());
+        #[cfg(not(target_arch = "wasm32"))]
+        self.preferences_window(ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
         {
             if !std::mem::replace(&mut self.update_started, true) {
@@ -515,5 +550,15 @@ mod tests {
 
         storage.set_string(SETTINGS_KEY, "not settings".into());
         assert_eq!(DeerawApp::new(Some(&storage)).background, Background::default());
+    }
+
+    #[test]
+    fn older_settings_check_for_updates() {
+        let mut storage = Memory::default();
+        storage.set_string(SETTINGS_KEY, "(preferences: (screenshot_on_launch: true))".into());
+        let app = DeerawApp::new(Some(&storage));
+        assert!(app.preferences.screenshot_on_launch && app.preferences.check_for_updates);
+        storage.set_string(SETTINGS_KEY, "(background: Black)".into());
+        assert_eq!(DeerawApp::new(Some(&storage)).preferences, Preferences::default());
     }
 }

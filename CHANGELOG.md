@@ -5,6 +5,8 @@ What changed in each release. Ctrl means Cmd on macOS.
 ## Unreleased
 
 - Moving an image takes along the text, drawings, shapes and images on it (hold Alt to move just the image).
+- File > Preferences… (Ctrl+,): take a screenshot when Deeraw opens, turn off the update check, and reset all
+  remembered settings to their defaults.
 - Help > Changelog shows what changed in each release.
 - Deeraw tells you when a new version is out (not for Microsoft Store installs, which the Store updates), with a
   link to the Store on Windows and the Homebrew command on macOS, Remind me later and Skip this version; Help > Check for updates… checks any time.

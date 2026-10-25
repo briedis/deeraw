@@ -232,8 +232,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 9. **Menu bar** — top of the window (`menu_bar`).
    - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
-     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Exit (Ctrl+W; works
-     even while typing).
+     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Preferences… (Ctrl+,; see 12),
+     Exit (Ctrl+W; works even while typing).
    - Edit: Undo, Redo, Cut, Copy, Paste, Delete, Select all, Duplicate, with shortcuts shown. Cut/Copy/Paste
      send `ViewportCommand::Request*`, so they produce the same clipboard events as the keys (and act on
      text being edited). A menu Paste goes to the canvas center, not under the pointer.
@@ -259,6 +259,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     Check for updates… always shows the result, also "up to date" or a failure, and ignores both. Microsoft Store
     installs (running from an MSIX package, `GetCurrentPackageFullName`) don't check on launch. PRIVACY.md's
     "Update check" section describes this request.
+12. **Preferences** (native only, `app/preferences.rs`; File > Preferences…, Ctrl+,) — `Preferences` in `Settings`:
+    "When Deeraw opens": Take a screenshot (macOS/Windows; `screenshot_on_launch`, starts one like `--screenshot`
+    but adds it to the empty canvas instead of starting a new drawing) and Check for updates (`check_for_updates`,
+    on by default; Help > Check for updates… still works). Reset to defaults applies `Settings::default()`
+    (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
 
 ## Current state
 
@@ -268,7 +273,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
+  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize

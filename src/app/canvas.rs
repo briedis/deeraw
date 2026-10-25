@@ -120,6 +120,8 @@ impl DeerawApp {
                             egui::Key::S => self.save_as(),
                             #[cfg(not(target_arch = "wasm32"))]
                             egui::Key::O => self.open_file(),
+                            #[cfg(not(target_arch = "wasm32"))]
+                            egui::Key::Comma => self.show_preferences = true,
                             egui::Key::A => self.select_all(),
                             _ => {}
                         }

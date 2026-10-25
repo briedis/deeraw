@@ -44,13 +44,13 @@ pub(super) struct UpdateCheck {
 }
 
 impl DeerawApp {
-    /// Starts a check, unless one is running. The launch check is skipped for Store installs and
-    /// while "Remind me later" is in effect.
+    /// Starts a check, unless one is running. The launch check is skipped when turned off in
+    /// Preferences, for Store installs and while "Remind me later" is in effect.
     pub(super) fn check_for_updates(&mut self, ctx: &egui::Context, manual: bool) {
         if self.update_check.is_some() {
             return;
         }
-        if !manual && (store_install() || self.update_reminder.is_some_and(|t| now() < t)) {
+        if !manual && (!self.preferences.check_for_updates || store_install() || self.update_reminder.is_some_and(|t| now() < t)) {
             return;
         }
         let (sender, receiver) = mpsc::channel();
