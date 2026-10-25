@@ -5,6 +5,9 @@ What changed in each release. Ctrl means Cmd on macOS.
 ## Unreleased
 
 - Moving an image takes along the text, drawings, shapes and images on it (hold Alt to move just the image).
+- Help > Changelog shows what changed in each release.
+- Deeraw tells you when a new version is out (not for Microsoft Store installs, which the Store updates), with
+  Remind me later and Skip this version; Help > Check for updates… checks any time.
 - The privacy policy now covers Microsoft Store installs and allows a check for new versions on GitHub.
 
 ## 0.6.2 (2026-10-24)

@@ -10,6 +10,8 @@ mod panels;
 mod screenshot;
 mod selection;
 mod snap;
+#[cfg(not(target_arch = "wasm32"))]
+mod update;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -47,6 +49,10 @@ struct Settings {
     style: Style,
     background: Background,
     save_dir: Option<PathBuf>,
+    /// "Skip this version" in the update window: that version isn't offered on launch.
+    skipped_version: Option<String>,
+    /// "Remind me later": no update window on launch before this (Unix seconds).
+    update_reminder: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -173,6 +179,18 @@ pub struct DeerawApp {
     /// The intro is gone for good: something was added or a tool other than Select picked.
     intro_dismissed: bool,
     show_about: bool,
+    show_changelog: bool,
+    /// The launch update check was started.
+    #[cfg(not(target_arch = "wasm32"))]
+    update_started: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    update_check: Option<update::UpdateCheck>,
+    #[cfg(not(target_arch = "wasm32"))]
+    update_window: Option<update::UpdateWindow>,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    skipped_version: Option<String>,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    update_reminder: Option<i64>,
     about_logo: Option<egui::TextureHandle>,
     /// Built once: the OS caches custom cursors by buffer identity.
     crosshair: Option<egui::CustomCursorImage>,
@@ -200,7 +218,7 @@ pub struct DeerawApp {
 
 impl DeerawApp {
     pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
-        let Settings { style, background, save_dir } =
+        let Settings { style, background, save_dir, skipped_version, update_reminder } =
             storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
         let paste_on_start = std::env::args().any(|a| a == "--paste");
         #[cfg(any(target_os = "macos", windows))]
@@ -209,6 +227,8 @@ impl DeerawApp {
             style,
             background,
             save_dir,
+            skipped_version,
+            update_reminder,
             paste_on_start,
             #[cfg(any(target_os = "macos", windows))]
             screenshot_until: screenshot_on_start.then_some(SCREENSHOT_START_FRAMES),
@@ -221,7 +241,13 @@ impl DeerawApp {
 
 impl eframe::App for DeerawApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        let settings = Settings { style: self.style, background: self.background, save_dir: self.save_dir.clone() };
+        let settings = Settings {
+            style: self.style,
+            background: self.background,
+            save_dir: self.save_dir.clone(),
+            skipped_version: self.skipped_version.clone(),
+            update_reminder: self.update_reminder,
+        };
         eframe::set_value(storage, SETTINGS_KEY, &settings);
     }
 
@@ -275,6 +301,14 @@ impl eframe::App for DeerawApp {
             .frame(egui::Frame::new().fill(fill))
             .show(ui, |ui| self.canvas(ui));
         self.about_window(ui.ctx());
+        self.changelog_window(ui.ctx());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if !std::mem::replace(&mut self.update_started, true) {
+                self.check_for_updates(ui.ctx(), false);
+            }
+            self.update_dialog(ui.ctx());
+        }
 
         if let Some(export) = self.export.take() {
             self.export_step(ui.ctx(), frame, export);

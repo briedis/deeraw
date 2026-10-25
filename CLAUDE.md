@@ -239,7 +239,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      text being edited). A menu Paste goes to the canvas center, not under the pointer.
    - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
-   - Help: View on GitHub (opens `repository` from Cargo.toml in the browser); About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
+   - Help: View on GitHub (opens `repository` from Cargo.toml in the browser); Changelog (`changelog_window`:
+     CHANGELOG.md built in with `include_str!`, a bold heading per `## ` release, "(this version)" on the running
+     one, its items as bullets, scrollable); Check for updates… (native; see 11); About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
      (`authors`), read with `env!`. Escape or × closes it. It also links the license.
 10. **Remembered settings** — the style (color, sizes, pen, arrow heads, alignment, fill), the canvas
     background and the last file folder survive a relaunch, via eframe's `persistence` feature
@@ -247,6 +249,14 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     the web), as do the window size and position. Saved on exit and every 30 seconds. `#[serde(default)]`
     keeps older settings files loading as fields are added; unreadable ones are ignored. The drawing
     isn't kept, and the app always starts with Select.
+11. **Update check** (native only, `app/update.rs`) — on launch a thread runs the system's `curl` (Windows 10
+    1803+ and macOS have it; `CREATE_NO_WINDOW` on Windows) for `HEAD <repository>/releases/latest`, and reads the
+    version from the redirect's `Location: …/releases/tag/vX.Y.Z` (no HTTP or JSON crate). If it's newer (compared
+    by number), an "Update available" window offers Download (opens that release page), Remind me later (no window
+    on launch for 24h, `update_reminder`) and Skip this version (`skipped_version`); both are in `Settings`. Help >
+    Check for updates… always shows the result, also "up to date" or a failure, and ignores both. Microsoft Store
+    installs (running from an MSIX package, `GetCurrentPackageFullName`) don't check on launch. PRIVACY.md's
+    "Update check" section describes this request.
 
 ## Current state
 
@@ -256,7 +266,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
+  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize

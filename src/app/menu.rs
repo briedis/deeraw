@@ -1,4 +1,4 @@
-//! The menu bar and the About window.
+//! The menu bar, and the About and Changelog windows.
 
 use eframe::egui::{self, Align2, ColorImage, Vec2};
 
@@ -63,6 +63,14 @@ impl DeerawApp {
                 if menu_item(ui, "View on GitHub", None, true) {
                     ui.ctx().open_url(egui::OpenUrl::new_tab(env!("CARGO_PKG_REPOSITORY")));
                 }
+                if menu_item(ui, "Changelog", None, true) {
+                    self.show_changelog = true;
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                if menu_item(ui, "Check for updates…", None, true) {
+                    self.check_for_updates(ui.ctx(), true);
+                }
+                ui.separator();
                 if menu_item(ui, "About Deeraw", None, true) {
                     self.show_about = true;
                 }
@@ -110,5 +118,92 @@ impl DeerawApp {
                 });
             });
         self.show_about = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    }
+
+    /// CHANGELOG.md as built into the app: a heading per release, its items as bullets.
+    pub(super) fn changelog_window(&mut self, ctx: &egui::Context) {
+        if !self.show_changelog {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Changelog")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.set_width(440.0);
+                egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.6).show(ui, |ui| {
+                    for section in changelog_sections(CHANGELOG) {
+                        let current = section.title.starts_with(concat!(env!("CARGO_PKG_VERSION"), " "));
+                        let title = if current { format!("{} (this version)", section.title) } else { section.title.to_string() };
+                        ui.add_space(6.0);
+                        ui.label(egui::RichText::new(title).strong().size(16.0));
+                        for item in &section.items {
+                            ui.horizontal_top(|ui| {
+                                ui.spacing_mut().item_spacing.x = 6.0;
+                                ui.label("•");
+                                ui.add(egui::Label::new(item).wrap());
+                            });
+                        }
+                    }
+                    ui.add_space(6.0);
+                });
+            });
+        self.show_changelog = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+    }
+}
+
+const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
+
+/// A `## ` section of the changelog.
+struct ChangelogSection<'a> {
+    title: &'a str,
+    /// Its `- ` items (or plain paragraphs), each with its indented continuation lines joined on.
+    items: Vec<String>,
+}
+
+fn changelog_sections(markdown: &str) -> Vec<ChangelogSection<'_>> {
+    let mut sections: Vec<ChangelogSection> = Vec::new();
+    for line in markdown.lines() {
+        if let Some(title) = line.strip_prefix("## ") {
+            sections.push(ChangelogSection { title: title.trim(), items: Vec::new() });
+            continue;
+        }
+        // The title and intro above the first release.
+        let Some(section) = sections.last_mut() else { continue };
+        let text = line.trim();
+        if text.is_empty() {
+            continue;
+        }
+        match (text.strip_prefix("- "), section.items.last_mut()) {
+            (Some(item), _) => section.items.push(item.to_string()),
+            (None, Some(last)) if line.starts_with(' ') => {
+                last.push(' ');
+                last.push_str(text);
+            }
+            (None, _) => section.items.push(text.to_string()),
+        }
+    }
+    sections
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn splits_the_changelog_into_releases() {
+        let markdown = "# Changelog\n\nIntro.\n\n## 0.2.0 (2026-10-20)\n\n- One\n- Two,\n  continued.\n\n## 0.1.0\n\nFirst release.\n";
+        let sections = changelog_sections(markdown);
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].title, "0.2.0 (2026-10-20)");
+        assert_eq!(sections[0].items, ["One", "Two, continued."]);
+        assert_eq!(sections[1].items, ["First release."]);
+    }
+
+    #[test]
+    fn the_built_in_changelog_has_releases() {
+        assert!(changelog_sections(CHANGELOG).iter().all(|s| !s.items.is_empty()));
     }
 }
