@@ -252,7 +252,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 11. **Update check** (native only, `app/update.rs`) — on launch a thread runs the system's `curl` (Windows 10
     1803+ and macOS have it; `CREATE_NO_WINDOW` on Windows) for `HEAD <repository>/releases/latest`, and reads the
     version from the redirect's `Location: …/releases/tag/vX.Y.Z` (no HTTP or JSON crate). If it's newer (compared
-    by number), an "Update available" window offers Download (opens that release page), Remind me later (no window
+    by number), an "Update available" window links the release page (What's new) and offers, since Deeraw is
+    distributed through the Microsoft Store and Homebrew rather than as release downloads, Open Microsoft Store
+    (Windows; its apps.microsoft.com page) or `brew upgrade --cask deeraw` with Copy command (macOS), then Remind me later (no window
     on launch for 24h, `update_reminder`) and Skip this version (`skipped_version`); both are in `Settings`. Help >
     Check for updates… always shows the result, also "up to date" or a failure, and ignores both. Microsoft Store
     installs (running from an MSIX package, `GetCurrentPackageFullName`) don't check on launch. PRIVACY.md's
