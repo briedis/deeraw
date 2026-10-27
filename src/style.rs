@@ -2,7 +2,17 @@
 
 use eframe::egui::{Align2, Color32, CornerRadius, Stroke, Visuals};
 
-use crate::object::{ArrowHeads, BlurStrength, Shape};
+use crate::object::{ArrowHeads, BlurStrength, Outline, Shape};
+
+/// Outline widths offered by the style panel (how far it reaches out), in canvas pixels.
+pub const OUTLINE_WIDTHS: [f32; 3] = [2.0, 4.0, 6.0];
+
+/// The automatic outline color around text, arrows and lines of `color`: black around white and other light
+/// colors, white around the rest, so they stand out on any image.
+pub fn outline_color(color: Color32) -> Color32 {
+    let luma = 0.299 * color.r() as f32 + 0.587 * color.g() as f32 + 0.114 * color.b() as f32;
+    if luma > 160.0 { Color32::BLACK } else { Color32::WHITE }
+}
 
 /// Colors offered by the style panel; the first is the default.
 pub const PALETTE: [(Color32, &str); 6] = [
@@ -40,6 +50,8 @@ pub enum StyleSection {
     /// Top, middle or bottom (text boxes).
     AlignY,
     Fill,
+    /// None, or its color and width (text, arrows and lines).
+    Outline,
 }
 
 /// Which size the style panel edits.
@@ -77,11 +89,13 @@ pub struct Style {
     pub fill: Option<Color32>,
     /// Whether shapes are outlined.
     pub border: bool,
+    /// For text, arrows and lines.
+    pub outline: Outline,
 }
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, text_color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), line: false, shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
+        Self { color: PALETTE[0].0, text_color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), line: false, shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true, outline: Outline::default() }
     }
 }
 
@@ -169,4 +183,16 @@ pub fn canvas_ui_visuals(background: Background) -> Visuals {
     widgets.active.weak_bg_fill = hover;
     widgets.active.bg_stroke = Stroke::NONE;
     visuals
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn outlines_contrast_with_every_palette_color() {
+        let outlines: Vec<Color32> = PALETTE.iter().map(|(color, _)| outline_color(*color)).collect();
+        let [black, white] = [Color32::BLACK, Color32::WHITE];
+        assert_eq!(outlines, [white, black, white, white, white, white]);
+    }
 }

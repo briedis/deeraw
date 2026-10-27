@@ -23,7 +23,7 @@ use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Vec2};
 use crate::export::Export;
 use crate::geometry::mostly_inside;
 use crate::history::History;
-use crate::object::{Binding, Kind, Object};
+use crate::object::{Binding, Kind, Object, Outline};
 use crate::style::{Background, Style, StyleSection};
 
 const SELECTION_COLOR: Color32 = Color32::from_rgb(105, 101, 219);
@@ -495,6 +495,9 @@ impl DeerawApp {
             }
             if let Some(Some(f)) = obj.fill_mut() {
                 swap(f);
+            }
+            if let Some(Outline { color: Some(c), .. }) = obj.outline_mut() {
+                swap(c);
             }
         }
     }

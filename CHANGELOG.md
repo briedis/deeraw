@@ -6,6 +6,8 @@ What changed in each release. Ctrl means Cmd on macOS.
 
 - Roomier menus, and the Changelog, About, Preferences and update windows share one roomier layout.
 - After an update, Deeraw opens with what's new: the changes in every release since the version you had.
+- Text, arrows and lines can have an outline (style panel), so they stand out on busy screenshots: automatic
+  (black or white, whichever contrasts) or a palette color, 2, 4 or 6px.
 
 ## 0.8.1 (2026-10-27)
 

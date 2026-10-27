@@ -9,7 +9,7 @@ use crate::export::{Export, ExportTarget};
 use crate::markdown::toggle_marker;
 use crate::geometry::{MIN_SIZE, align_candidates, align_guides, align_offset, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
 use crate::object::{ArrowHeads, Kind};
-use crate::paint::{layout_text, paint_arrow, paint_row_fills, text_padding, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
+use crate::paint::{layout_text, paint_arrow, paint_row_fills, paint_text_outline, text_padding, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
 use crate::stroke::{add_stroke_points, paint_hand_drawn, paint_plain, speed_pressures};
 use crate::style::{Background, Style};
 
@@ -300,7 +300,9 @@ impl DeerawApp {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
                 // Only the Arrow tool draws lines; connecting objects with Select draws arrows.
                 let heads = if self.tool == Tool::Arrow && self.style.line { ArrowHeads::NONE } else { self.style.arrow_heads };
-                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads);
+                let outline = self.style.outline;
+                let outline = outline.on.then(|| (outline.width * scale, outline.color_around(self.style.color)));
+                paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads, outline);
                 self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), arrow_tool, bindings, to_screen_pos);
             }
             Some(Drawing::TextBox(a, b)) => {
@@ -624,19 +626,19 @@ impl DeerawApp {
     /// Adds pasted text as inline text in the Text tool's style, centered on `center` (canvas), and selects it.
     fn place_text(&mut self, painter: &egui::Painter, text: &str, center: Pos2) {
         let text = text.replace("\r\n", "\n").trim_end().to_owned();
-        let Style { font_px, text_color: color, align, fill, .. } = self.style;
+        let Style { font_px, text_color: color, align, fill, outline, .. } = self.style;
         let size = layout_text(painter, &text, font_px, color, align, None, false).size() + 2.0 * text_padding(font_px);
-        self.add(Rect::from_center_size(center, size), Kind::Text { text, font_px, color, align, fill, frame: None });
+        self.add(Rect::from_center_size(center, size), Kind::Text { text, font_px, color, align, fill, frame: None, outline });
         self.tool = Tool::Select;
     }
 
     /// Adds an empty text object (its text at `min`, or as the box `frame` there) and starts editing it.
     pub(super) fn start_text(&mut self, min: Pos2, frame: Option<Vec2>) {
-        let Style { font_px, text_color: color, align, fill, .. } = self.style;
+        let Style { font_px, text_color: color, align, fill, outline, .. } = self.style;
         // Inline text: the text itself (inside the padding) starts at `min`.
         let min = if frame.is_none() { min - text_padding(font_px) } else { min };
         let rect = Rect::from_min_size(min, frame.unwrap_or(Vec2::splat(MIN_SIZE)));
-        let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, align, fill, frame });
+        let id = self.add(rect, Kind::Text { text: String::new(), font_px, color, align, fill, frame, outline });
         self.editing = Some(id);
         self.focus_editor = true;
     }
@@ -650,9 +652,9 @@ impl DeerawApp {
                 self.add(rect, Kind::Stroke { points, pressures, color, width, hand_drawn });
             }
             Some(Drawing::Arrow(start, end, bindings)) if start.distance(end) >= MIN_SIZE => {
-                let Style { color, line_width: width, arrow_heads, line, .. } = self.style;
+                let Style { color, line_width: width, arrow_heads, line, outline, .. } = self.style;
                 let heads = (self.tool != Tool::Arrow || !line).then_some(arrow_heads);
-                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings });
+                self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings, outline });
             }
             Some(Drawing::Shape(a, b)) => {
                 let rect = Rect::from_two_pos(a, b);
@@ -682,7 +684,7 @@ impl DeerawApp {
             self.editing = None;
             return;
         };
-        let Kind::Text { text, font_px, color, align, fill, frame } = &mut obj.kind else {
+        let Kind::Text { text, font_px, color, align, fill, frame, outline } = &mut obj.kind else {
             self.editing = None;
             return;
         };
@@ -710,7 +712,7 @@ impl DeerawApp {
         }
         // Lay out exactly like `layout_text` (egui would otherwise wrap at the available width).
         let screen_frame = frame.map(|f| f * scale);
-        let (color, text_align, fill) = (*color, *align, *fill);
+        let (color, text_align, fill, outline) = (*color, *align, *fill, *outline);
         let mut layouter = |ui: &egui::Ui, buf: &dyn egui::TextBuffer, _: f32| {
             let mut job = text_layout_job(buf.as_str(), *font_px * scale, color, text_align, screen_frame, true);
             job.keep_trailing_whitespace = true;
@@ -761,6 +763,13 @@ impl DeerawApp {
                     .show(ui)
             })
             .inner;
+        // Below the editor's text, on the canvas layer, laid out like the editor's.
+        if outline.on {
+            let mut job = text_layout_job(text, *font_px * scale, outline.color_around(color), text_align, screen_frame, true);
+            job.keep_trailing_whitespace = true;
+            let around = ui.fonts_mut(|f| f.layout_job(job));
+            paint_text_outline(ui.painter(), &around, output.galley_pos, outline.width * scale);
+        }
         if std::mem::take(&mut self.focus_editor) {
             output.response.request_focus();
         }

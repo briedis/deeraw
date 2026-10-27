@@ -172,11 +172,11 @@ mod tests {
     fn app_with_arrow_on_text() -> DeerawApp {
         let mut app = DeerawApp::default();
         let rect = Rect::from_min_size(Pos2::new(100.0, 100.0), Vec2::new(50.0, 20.0));
-        let text = Kind::Text { text: "hi".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None };
+        let text = Kind::Text { text: "hi".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None, outline: Default::default() };
         let target = app.add(rect, text);
         let end = anchor(rect, Side::Left);
         let binding = Binding { id: target, side: Side::Left };
-        let kind = Kind::Arrow { start: Pos2::ZERO, end, color: Color32::BLACK, width: 2.0, heads: Some(ArrowHeads::default()), bindings: [None, Some(binding)] };
+        let kind = Kind::Arrow { start: Pos2::ZERO, end, color: Color32::BLACK, width: 2.0, heads: Some(ArrowHeads::default()), bindings: [None, Some(binding)], outline: Default::default() };
         app.add(Rect::from_two_pos(Pos2::ZERO, end), kind);
         app
     }
@@ -199,7 +199,7 @@ mod tests {
     fn arrow_attached_at_both_ends_stretches() {
         let mut app = app_with_arrow_on_text();
         let rect = Rect::from_min_size(Pos2::new(-100.0, -100.0), Vec2::new(50.0, 20.0));
-        let other = app.add(rect, Kind::Text { text: "yo".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None });
+        let other = app.add(rect, Kind::Text { text: "yo".into(), font_px: 16.0, color: Color32::BLACK, align: egui::Align2::LEFT_TOP, fill: None, frame: None, outline: Default::default() });
         let arrow_id = arrow(&app).id;
         if let Some(Object { kind: Kind::Arrow { bindings, .. }, .. }) = app.objects.iter_mut().find(|o| o.id == arrow_id) {
             bindings[0] = Some(Binding { id: other, side: Side::Right });

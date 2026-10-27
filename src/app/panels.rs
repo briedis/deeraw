@@ -5,9 +5,9 @@ use eframe::egui::{self, Align2, Color32, CursorIcon, Pos2, Rect, Sense, Vec2};
 use super::{DeerawApp, Tool};
 use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
-use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Shape};
-use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_x_button, align_y_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, pressed, size_button};
+use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Outline, Shape};
+use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, OUTLINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
+use crate::widgets::{Icon, auto_color_button, align_x_button, align_y_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, outline_button, pen_button, pressed, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -240,6 +240,15 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].arrow_heads_mut().map(|h| *h))
             .unwrap_or(self.style.arrow_heads);
+        let show_outline = match self.tool {
+            Tool::Arrow | Tool::Text => true,
+            Tool::Select => targets.iter().any(|&i| self.objects[i].outline_mut().is_some()),
+            _ => false,
+        };
+        let outline = targets
+            .iter()
+            .find_map(|&i| self.objects[i].outline_mut().map(|o| *o))
+            .unwrap_or(self.style.outline);
         let show_align = match self.tool {
             Tool::Text => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].align_mut().is_some()),
@@ -295,6 +304,7 @@ impl DeerawApp {
             Some(StyleSection::AlignX) if !show_align => self.style_open = None,
             Some(StyleSection::AlignY) if !show_align_y => self.style_open = None,
             Some(StyleSection::Fill) if !show_fill => self.style_open = None,
+            Some(StyleSection::Outline) if !show_outline => self.style_open = None,
             Some(StyleSection::Shape) if !show_shape => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
             Some(StyleSection::ArrowKind) if !show_arrow_kind => self.style_open = None,
@@ -313,6 +323,7 @@ impl DeerawApp {
         let mut new_shape = None;
         let mut new_blur = None;
         let mut new_border = None;
+        let mut new_outline = None;
         // The stack above the toolbar grows upwards: this panel, then the open section's options.
         let mut top = toolbar.top();
         if show_color || show_blur {
@@ -348,6 +359,9 @@ impl DeerawApp {
                                     SizeKind::Line => icon_button(ui, open, Icon::StrokeWidth, 14.0, &format!("Line width: {size:.0}px")),
                                     SizeKind::Font => size_button(ui, open, kind, size),
                                 });
+                            }
+                            if show_outline {
+                                self.style_toggle(ui, StyleSection::Outline, |ui, open| outline_button(ui, open, outline));
                             }
                             if show_pen {
                                 self.style_toggle(ui, StyleSection::Pen, |ui, open| pen_button(ui, open, hand_drawn));
@@ -417,7 +431,7 @@ impl DeerawApp {
                                     SizeKind::Font => FONT_SIZES,
                                 };
                                 let shapes = show_border && kind == SizeKind::Line;
-                                if shapes && no_border_button(ui, !border) {
+                                if shapes && no_border_button(ui, !border, "No border") {
                                     new_border = Some(false);
                                 }
                                 for option in options {
@@ -455,6 +469,26 @@ impl DeerawApp {
                                     }
                                 }
                             }
+                            // Picking a color or a width turns the outline on.
+                            StyleSection::Outline => {
+                                if no_border_button(ui, !outline.on, "No outline") {
+                                    new_outline = Some(Outline { on: false, ..outline });
+                                }
+                                if auto_color_button(ui, outline.on && outline.color.is_none()) {
+                                    new_outline = Some(Outline { on: true, color: None, ..outline });
+                                }
+                                for (swatch, name) in PALETTE {
+                                    if color_swatch(ui, outline.on && outline.color == Some(swatch), name, Some(swatch)) {
+                                        new_outline = Some(Outline { on: true, color: Some(swatch), ..outline });
+                                    }
+                                }
+                                ui.separator();
+                                for width in OUTLINE_WIDTHS {
+                                    if size_button(ui, outline.on && outline.width == width, SizeKind::Line, width) {
+                                        new_outline = Some(Outline { on: true, width, ..outline });
+                                    }
+                                }
+                            }
                             StyleSection::AlignX => {
                                 for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
                                     if align_x_button(ui, align.x() == x, x) {
@@ -475,7 +509,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align_x.is_none() && new_align_y.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_line.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align_x.is_none() && new_align_y.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_line.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() && new_outline.is_none() {
             return;
         }
         self.style_open = None;
@@ -510,6 +544,14 @@ impl DeerawApp {
                     *b = border;
                 }
                 self.objects[i].keep_visible(true);
+            }
+        }
+        if let Some(outline) = new_outline {
+            self.style.outline = outline;
+            for &i in &targets {
+                if let Some(o) = self.objects[i].outline_mut() {
+                    *o = outline;
+                }
             }
         }
         if let Some(pen) = new_pen {

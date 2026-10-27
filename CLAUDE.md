@@ -227,6 +227,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text and the Text tool
    also get a horizontal alignment button (left/center/right, word-processor style line icons) and, unless the targets are only inline text, a vertical one (top/middle/bottom, lines in a box); each sets only its own axis; shapes and the Shape tool also get "no border" among the line widths; text, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
+   Text, arrows/lines and the Text and Arrow tools also get an outline button (`Outline` in `object.rs`: `on`, `color`,
+   `width`; a capsule icon filled with its color): no outline, automatic color (`outline_color` in style.rs: black around
+   light colors, white around the rest; a half black/white swatch), a palette color, and `OUTLINE_WIDTHS` (2/4/6px, how far
+   it reaches out); picking a color or width turns it on. Arrows paint it as a wider pass under themselves (`paint_arrow`'s
+   `outline`), text as copies of an outline-colored galley on two rings around it (`paint_text_outline`), also while editing.
    The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
    With a drawing tool it sets the style of new objects and also restyles the selected objects that tool draws
    (so the one just drawn; `drawing_tool`); with a selection it restyles every

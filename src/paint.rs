@@ -48,17 +48,19 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
                 paint_plain(painter, &points, width * scale, *color);
             }
         }
-        Kind::Arrow { start, end, color, width, heads, .. } => {
+        Kind::Arrow { start, end, color, width, heads, outline, .. } => {
             let stroke = Stroke::new(width * scale, *color);
-            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads.unwrap_or(ArrowHeads::NONE));
+            let outline = outline.on.then(|| (outline.width * scale, outline.color_around(*color)));
+            paint_arrow(painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads.unwrap_or(ArrowHeads::NONE), outline);
         }
         Kind::Shape { shape, color, width, border, fill } => {
             let stroke = if *border { Stroke::new(width * scale, *color) } else { Stroke::NONE };
             paint_shape(painter, *shape, rect, stroke, *fill);
         }
-        Kind::Text { text, font_px, color, align, fill, frame } => {
+        Kind::Text { text, font_px, color, align, fill, frame, outline } => {
             let frame = frame.map(|f| f * scale);
             let galley = layout_text(painter, text, font_px * scale, *color, *align, frame, false);
+            let around = outline.on.then(|| layout_text(painter, text, font_px * scale, outline.color_around(*color), *align, frame, false));
             // Same placement as `TextEdit` uses, so editing doesn't shift the text.
             let (align, rect) = if frame.is_some() { (*align, rect) } else { (Align2::LEFT_TOP, rect.shrink2(text_padding(font_px * scale))) };
             let pos = align.align_size_within_rect(galley.size(), rect).min - Vec2::new(galley.rect.left(), 0.0);
@@ -69,7 +71,22 @@ pub fn paint_object(painter: &Painter, obj: &Object, objects: &[Object], rect: R
                 (Some(fill), None) => paint_row_fills(painter, &galley, pos, font_px * scale, *fill),
                 (None, _) => {}
             }
+            if let Some(around) = around {
+                paint_text_outline(painter, &around, pos, outline.width * scale);
+            }
             painter.galley(pos, galley, *color);
+        }
+    }
+}
+
+/// Paints `galley` (laid out in the outline color) around `pos`, out to `width`: with the text painted
+/// on top at `pos`, an outline around its letters. Copies on two rings, so wide outlines have no gaps.
+pub fn paint_text_outline(painter: &Painter, galley: &Arc<egui::Galley>, pos: Pos2, width: f32) {
+    const STEPS: usize = 16;
+    for radius in [width, width / 2.0] {
+        for i in 0..STEPS {
+            let offset = Vec2::angled(i as f32 * std::f32::consts::TAU / STEPS as f32) * radius;
+            painter.galley(pos + offset, galley.clone(), Color32::PLACEHOLDER);
         }
     }
 }
@@ -152,37 +169,50 @@ fn ellipse_points(painter: &Painter, rect: Rect) -> Vec<Pos2> {
 }
 
 /// Draws a line from `start` to `end` (screen points) with `heads`; they grow with the stroke
-/// width. `scale` is screen points per canvas pixel.
-pub fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, heads: ArrowHeads) {
+/// width. `scale` is screen points per canvas pixel. `outline` (how far out, in screen points, and
+/// its color) paints an outline around it first.
+pub fn paint_arrow(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, heads: ArrowHeads, outline: Option<(f32, Color32)>) {
+    if let Some((width, color)) = outline {
+        paint_arrow_pass(painter, start, end, stroke, scale, heads, width, color);
+    }
+    paint_arrow_pass(painter, start, end, stroke, scale, heads, 0.0, stroke.color);
+}
+
+/// The arrow in `color`, every part `grow` wider on each side (and the line that much longer at an
+/// end without a head); the heads keep the size of the arrow itself.
+#[allow(clippy::too_many_arguments)]
+fn paint_arrow_pass(painter: &Painter, start: Pos2, end: Pos2, stroke: Stroke, scale: f32, heads: ArrowHeads, grow: f32, color: Color32) {
+    let wide = Stroke::new(stroke.width + 2.0 * grow, color);
     let along = end - start;
     let length = along.length();
     if length < 1.0 {
-        painter.line_segment([start, end], stroke);
+        painter.line_segment([start, end], wide);
         return;
     }
     let ends = if heads.start != Head::None && heads.end != Head::None { 3.0 } else { 2.0 };
     let head_length = (ARROW_HEAD * scale + ARROW_HEAD_PER_WIDTH * stroke.width).min(length / ends);
     let dir = along / length;
-    let line_start = paint_head(painter, start, -dir, head_length, stroke, heads.start);
-    let line_end = paint_head(painter, end, dir, head_length, stroke, heads.end);
-    painter.line_segment([line_start, line_end], stroke);
+    let line_start = paint_head(painter, start, -dir, head_length, wide, grow, heads.start);
+    let line_end = paint_head(painter, end, dir, head_length, wide, grow, heads.end);
+    painter.line_segment([line_start, line_end], wide);
 }
 
-/// Draws `head` with its tip at `tip`, pointing along `dir` (unit); returns where the line
-/// should end so its square end stays hidden under the head.
-fn paint_head(painter: &Painter, tip: Pos2, dir: Vec2, length: f32, stroke: Stroke, head: Head) -> Pos2 {
+/// Draws `head` with its tip at `tip`, pointing along `dir` (unit), its outline `grow` out; returns
+/// where the line should end so its square end stays hidden under the head.
+fn paint_head(painter: &Painter, tip: Pos2, dir: Vec2, length: f32, stroke: Stroke, grow: f32, head: Head) -> Pos2 {
     let back = -dir * length;
     let spread = Rot2::from_angle(ARROW_HEAD_SPREAD);
     let sides = [tip + spread * back, tip + spread.inverse() * back];
     match head {
-        Head::None => tip,
+        Head::None => tip + dir * grow,
         Head::Open => {
             // One path, so the sides are joined in a point however thick they are.
             painter.add(PathShape::line(vec![sides[0], tip, sides[1]], stroke));
             tip
         }
         Head::Solid => {
-            painter.add(PathShape::convex_polygon(vec![sides[0], tip, sides[1]], stroke.color, Stroke::NONE));
+            let rim = if grow > 0.0 { Stroke::new(2.0 * grow, stroke.color) } else { Stroke::NONE };
+            painter.add(PathShape::convex_polygon(vec![sides[0], tip, sides[1]], stroke.color, rim));
             // Halfway into the head, which is still wider than the line there.
             tip + back * ARROW_HEAD_SPREAD.cos() / 2.0
         }

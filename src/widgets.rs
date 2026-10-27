@@ -2,10 +2,10 @@
 
 use eframe::egui::{self, Align, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
 
-use crate::object::{ArrowHeads, BlurStrength, Head};
+use crate::object::{ArrowHeads, BlurStrength, Head, Outline};
 use crate::paint::{paint_arrow, paint_checkerboard};
 use crate::stroke::paint_hand_drawn;
-use crate::style::{FONT_SIZES, SizeKind};
+use crate::style::{FONT_SIZES, PALETTE, SizeKind};
 
 /// Padding around a dialog's content (its title bar keeps egui's default).
 pub const DIALOG_MARGIN: f32 = 16.0;
@@ -95,8 +95,8 @@ pub fn size_button(ui: &mut egui::Ui, selected: bool, kind: SizeKind, size: f32)
     pressed(ui, &response)
 }
 
-/// A selectable button for shapes without an outline: a struck-through circle.
-pub fn no_border_button(ui: &mut egui::Ui, selected: bool) -> bool {
+/// A selectable struck-through circle, for no border (shapes) or no outline (text, arrows and lines).
+pub fn no_border_button(ui: &mut egui::Ui, selected: bool, name: &str) -> bool {
     let button = egui::Button::selectable(selected, "").min_size(Vec2::new(30.0, 22.0));
     let response = ui.add(button);
     let center = response.rect.center();
@@ -105,7 +105,41 @@ pub fn no_border_button(ui: &mut egui::Ui, selected: bool) -> bool {
     ui.painter().circle_stroke(center, radius, stroke);
     let d = Vec2::splat(radius * std::f32::consts::FRAC_1_SQRT_2);
     ui.painter().line_segment([center - Vec2::new(-d.x, d.y), center + Vec2::new(-d.x, d.y)], stroke);
-    let response = response.on_hover_text("No border");
+    let response = response.on_hover_text(name);
+    pressed(ui, &response)
+}
+
+/// The outline section's button: a capsule outline, filled with the outline's color while it has one
+/// (gray when automatic).
+pub fn outline_button(ui: &mut egui::Ui, open: bool, outline: Outline) -> bool {
+    let button = egui::Button::selectable(open, "").min_size(Vec2::new(30.0, 22.0));
+    let name = match (outline.on, outline.color) {
+        (false, _) => "No outline".to_owned(),
+        (true, None) => format!("Outline: automatic color, {:.0}px", outline.width),
+        (true, Some(color)) => {
+            let name = PALETTE.iter().find(|(c, _)| *c == color).map_or("Color", |(_, n)| n);
+            format!("Outline: {name}, {:.0}px", outline.width)
+        }
+    };
+    let response = ui.add(button).on_hover_text(name);
+    let color = if open { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+    let capsule = Rect::from_center_size(response.rect.center(), Vec2::new(16.0, 8.0));
+    if outline.on {
+        ui.painter().rect_filled(capsule, 4.0, outline.color.unwrap_or(Color32::GRAY));
+    }
+    ui.painter().rect_stroke(capsule, 4.0, Stroke::new(1.5, color), StrokeKind::Middle);
+    pressed(ui, &response)
+}
+
+/// The automatic outline color option: a swatch half black, half white.
+pub fn auto_color_button(ui: &mut egui::Ui, selected: bool) -> bool {
+    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
+    let response = ui.add(button).on_hover_text("Automatic: black or white, whichever stands out");
+    let swatch = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
+    let (left, right) = swatch.split_left_right_at_fraction(0.5);
+    ui.painter().rect_filled(left, egui::CornerRadius { nw: 2, sw: 2, ..Default::default() }, Color32::BLACK);
+    ui.painter().rect_filled(right, egui::CornerRadius { ne: 2, se: 2, ..Default::default() }, Color32::WHITE);
+    ui.painter().rect_stroke(swatch, 2.0, Stroke::new(1.0, Color32::GRAY), StrokeKind::Outside);
     pressed(ui, &response)
 }
 
@@ -142,7 +176,7 @@ pub fn arrow_head_button(ui: &mut egui::Ui, selected: bool, head: Head, start: b
     let color = if selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
     let heads = if start { ArrowHeads { start: head, end: Head::None } } else { ArrowHeads { start: Head::None, end: head } };
     // Sized to look like a 2px arrow at 100%.
-    paint_arrow(ui.painter(), r.left_center(), r.right_center(), Stroke::new(1.5, color), 0.45, heads);
+    paint_arrow(ui.painter(), r.left_center(), r.right_center(), Stroke::new(1.5, color), 0.45, heads, None);
     pressed(ui, &response)
 }
 

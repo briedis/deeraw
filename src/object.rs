@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use eframe::egui::{Align2, Color32, ColorImage, Pos2, Rect, TextureHandle, Vec2};
 
-use crate::style::SizeKind;
+use crate::style::{OUTLINE_WIDTHS, SizeKind, outline_color};
 
 /// An object on the canvas. `rect` is in canvas pixels (physical pixels
 /// relative to the canvas origin), so a fresh image paste shows 1:1.
@@ -28,8 +28,9 @@ pub enum Kind {
     Stroke { points: Vec<Pos2>, pressures: Vec<f32>, color: Color32, width: f32, hand_drawn: bool },
     /// Endpoints in canvas pixels; `rect` is derived from them. Edited point by point.
     /// Without `heads` it's a plain line (Line tool). `bindings` (start, end) attach an endpoint
-    /// to a side of a text or image object, which it then follows.
-    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, heads: Option<ArrowHeads>, bindings: [Option<Binding>; 2] },
+    /// to a side of a text or image object, which it then follows. `outline` paints a contrasting
+    /// outline around it.
+    Arrow { start: Pos2, end: Pos2, color: Color32, width: f32, heads: Option<ArrowHeads>, bindings: [Option<Binding>; 2], outline: Outline },
     /// A rectangle, ellipse or diamond filling `rect`, outlined `width` wide unless `border` is
     /// off; `fill` `None` is outline only (then it's grabbed only near the outline). It always
     /// has a border or a fill (`keep_visible`).
@@ -39,11 +40,36 @@ pub enum Kind {
     /// behind each row of text only. With `frame` (drag a box: its size, canvas pixels), lines
     /// wrap at its width, the text is aligned inside it by `align`, `fill` fills it, and resizing
     /// changes the box, not the font; `rect` is the box, grown taller if the text overflows.
-    Text { text: String, font_px: f32, color: Color32, align: Align2, fill: Option<Color32>, frame: Option<Vec2> },
+    /// `outline` paints an outline around the letters.
+    Text { text: String, font_px: f32, color: Color32, align: Align2, fill: Option<Color32>, frame: Option<Vec2>, outline: Outline },
     /// Pixelates the part `area` (0..1 of the whole, uncropped texture) of image `image`; `rect`
     /// is derived from it, so it moves, resizes and crops with the image. Only the part inside
     /// the image's kept area shows. Kept right above its image.
     Blur { image: u64, area: Rect, strength: BlurStrength },
+}
+
+/// An outline around text, arrows and lines, so they stand out on busy images.
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct Outline {
+    pub on: bool,
+    /// `None` is automatic: black or white, whichever stands out from the object's color.
+    pub color: Option<Color32>,
+    /// How far it reaches out from the letters or line, in canvas pixels.
+    pub width: f32,
+}
+
+impl Default for Outline {
+    fn default() -> Self {
+        Self { on: false, color: None, width: OUTLINE_WIDTHS[0] }
+    }
+}
+
+impl Outline {
+    /// Its color around an object of `color`.
+    pub fn color_around(self, color: Color32) -> Color32 {
+        self.color.unwrap_or_else(|| outline_color(color))
+    }
 }
 
 /// How coarse a blur's pixelation is.
@@ -244,6 +270,14 @@ impl Object {
     pub fn arrow_heads_mut(&mut self) -> Option<&mut ArrowHeads> {
         match &mut self.kind {
             Kind::Arrow { heads: Some(heads), .. } => Some(heads),
+            _ => None,
+        }
+    }
+
+    /// Contrasting outline, for text, arrows and lines.
+    pub fn outline_mut(&mut self) -> Option<&mut Outline> {
+        match &mut self.kind {
+            Kind::Arrow { outline, .. } | Kind::Text { outline, .. } => Some(outline),
             _ => None,
         }
     }
