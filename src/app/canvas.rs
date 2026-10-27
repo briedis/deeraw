@@ -396,7 +396,9 @@ impl DeerawApp {
                     || (self.space_pan && i.pointer.button_pressed(PointerButton::Primary)),
             )
         });
-        let over_canvas = hover.filter(|p| canvas_rect.contains(*p));
+        // Not over the toolbar, nor while a menu or a window (Preferences, Changelog…) is open.
+        let blocked = self.window_open() || egui::Popup::is_any_open(ui.ctx());
+        let over_canvas = hover.filter(|p| !blocked && canvas_rect.contains(*p) && ui.ctx().layer_id_at(*p).is_none_or(|l| l == ui.layer_id()));
 
         // Pressing Space mid-drag doesn't turn that drag into a pan.
         if space && self.editing.is_none() && (!any_down || self.space_pan) {

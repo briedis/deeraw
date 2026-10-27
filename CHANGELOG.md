@@ -2,6 +2,10 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## 0.8.1 (2026-10-27)
+
+- The mouse wheel no longer zooms the canvas while a menu or a window (Preferences, Changelog, About) is open.
+
 ## 0.8.0 (2026-10-27)
 
 - Line is now a mode of the Arrow tool (one toolbar button fewer): pick Arrow or Line in the style panel, or press

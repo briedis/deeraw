@@ -486,6 +486,15 @@ impl DeerawApp {
         }
     }
 
+    /// About, Changelog, Preferences or the update window is shown.
+    pub(super) fn window_open(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.show_preferences || self.update_window.is_some() {
+            return true;
+        }
+        self.show_about || self.show_changelog
+    }
+
     fn select_all(&mut self) {
         self.tool = Tool::Select;
         self.selected = self.objects.iter().map(|o| o.id).collect();
