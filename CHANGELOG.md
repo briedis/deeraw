@@ -7,6 +7,8 @@ What changed in each release. Ctrl means Cmd on macOS.
 - Line is now a mode of the Arrow tool (one toolbar button fewer): pick Arrow or Line in the style panel, or press
   L. Picking it with arrows or lines selected turns them into the other.
 - Text alignment has separate horizontal and vertical buttons; the vertical one shows only for text boxes.
+- Switching between a light and a dark background swaps black and white in the drawing, so it doesn't vanish
+  (other colors, and things on an image, stay as they are).
 - Changing the style right after drawing something (while its tool is still active) restyles what you just drew.
 
 ## 0.7.0 (2026-10-26)

@@ -217,7 +217,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    transparent, the PNG has real alpha (the offscreen render clears to transparent).
    Each background has a default ink: black on white/transparent, white on black. Switching the
    background while the drawing (or text) color is the old ink switches it to the new one (other colors
-   are kept; existing objects are not recolored). Not in undo history.
+   are kept). When the ink changes, objects' black and white (colors and fills) swap both ways
+   (`set_background`), so switching back restores them; objects on an image (above one, `mostly_inside`) are
+   skipped. The background isn't in undo history (undo reverts the recoloring only).
 8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Shape or Text is active,
    or while a stroke, arrow, line, shape or text is selected. It shows the current color and size; clicking
    either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,

@@ -442,6 +442,50 @@ impl DeerawApp {
         self.objects.retain(|obj| !selected.contains(&obj.id) && !obj.blurred_image().is_some_and(|i| selected.contains(&i)));
     }
 
+    /// Switches the canvas background. When its default ink changes (black on white or transparent,
+    /// white on black), every object's black and white (colors and fills) swap, so black lines and
+    /// text don't vanish on black and white-on-black text boxes stay readable; other colors like red
+    /// stay, and so do objects on an image (above one and at least half inside it), which shows the
+    /// same on any background. Swapping both ways makes switching back restore the drawing. The drawing color follows
+    /// only if it was the old ink. Undo reverts the colors (the background isn't in history).
+    pub(super) fn set_background(&mut self, background: Background) {
+        let (old, new) = (self.background.ink(), background.ink());
+        self.background = background;
+        if old == new {
+            return;
+        }
+        for color in [&mut self.style.color, &mut self.style.text_color] {
+            if *color == old {
+                *color = new;
+            }
+        }
+        let swap = |c: &mut Color32| {
+            if *c == old {
+                *c = new;
+            } else if *c == new {
+                *c = old;
+            }
+        };
+        let on_image: Vec<bool> = (0..self.objects.len())
+            .map(|i| {
+                self.objects[..i]
+                    .iter()
+                    .any(|o| matches!(o.kind, Kind::Image { .. }) && mostly_inside(self.objects[i].rect, o.rect))
+            })
+            .collect();
+        for (obj, on_image) in self.objects.iter_mut().zip(on_image) {
+            if on_image {
+                continue;
+            }
+            if let Some(c) = obj.color_mut() {
+                swap(c);
+            }
+            if let Some(Some(f)) = obj.fill_mut() {
+                swap(f);
+            }
+        }
+    }
+
     fn select_all(&mut self) {
         self.tool = Tool::Select;
         self.selected = self.objects.iter().map(|o| o.id).collect();
@@ -479,6 +523,30 @@ mod tests {
         assert_eq!(app.selected, [1, 3]);
         app.click_select(3, false);
         assert_eq!(app.selected, [3]);
+    }
+
+    #[test]
+    fn black_background_swaps_black_and_white_objects() {
+        let mut app = DeerawApp::default();
+        let stroke = |color| Kind::Stroke { points: vec![], pressures: vec![], color, width: 2.0, hand_drawn: false };
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(10.0));
+        for color in [Color32::BLACK, Color32::WHITE, Color32::RED] {
+            app.add(rect, stroke(color));
+        }
+        // A black stroke on an image keeps its color.
+        let ctx = egui::Context::default();
+        app.add_image(&ctx, Arc::new(ColorImage::filled([10, 10], Color32::RED)), Pos2::ZERO);
+        app.objects.last_mut().unwrap().rect = rect.translate(Vec2::new(100.0, 0.0));
+        app.add(rect.translate(Vec2::new(102.0, 0.0)), stroke(Color32::BLACK));
+        let colors = |app: &mut DeerawApp| app.objects.iter_mut().filter_map(|o| o.color_mut().copied()).collect::<Vec<_>>();
+        app.set_background(Background::Black);
+        assert_eq!(colors(&mut app), [Color32::WHITE, Color32::BLACK, Color32::RED, Color32::BLACK]);
+        assert_eq!(app.style.color, Color32::WHITE);
+        // Transparent has the same ink as white: nothing more changes.
+        app.set_background(Background::Transparent);
+        assert_eq!(colors(&mut app), [Color32::BLACK, Color32::WHITE, Color32::RED, Color32::BLACK]);
+        app.set_background(Background::White);
+        assert_eq!(colors(&mut app), [Color32::BLACK, Color32::WHITE, Color32::RED, Color32::BLACK]);
     }
 
     #[test]

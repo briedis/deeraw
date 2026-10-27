@@ -148,14 +148,7 @@ impl DeerawApp {
             (Background::Black, "Black background"),
         ] {
             if color_swatch(ui, self.background == background, name, background.color()) {
-                // Drawing with the old background's default ink switches to the new one's
-                // (black on black would be invisible); a picked color like red stays.
-                for color in [&mut self.style.color, &mut self.style.text_color] {
-                    if *color == self.background.ink() {
-                        *color = background.ink();
-                    }
-                }
-                self.background = background;
+                self.set_background(background);
                 clicked_any = true;
             }
         }
