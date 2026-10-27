@@ -14,6 +14,7 @@ use eframe::egui;
 #[cfg(not(windows))]
 use super::Notice;
 use super::DeerawApp;
+use super::menu::{is_newer, parse_version};
 use crate::widgets::dialog;
 
 /// The page that redirects to the latest release, `…/releases/tag/vX.Y.Z`.
@@ -177,18 +178,6 @@ fn version_from_headers(headers: &str) -> Option<String> {
     })
 }
 
-fn parse_version(version: &str) -> Option<Vec<u32>> {
-    version.split('.').map(|part| part.parse().ok()).collect()
-}
-
-/// Whether `latest` is a later version than `current` (by number, so 0.10.0 is after 0.9.0).
-fn is_newer(latest: &str, current: &str) -> bool {
-    match (parse_version(latest), parse_version(current)) {
-        (Some(latest), Some(current)) => latest > current,
-        _ => false,
-    }
-}
-
 /// Installed from the Microsoft Store (running from an MSIX package), which handles updates.
 #[cfg(windows)]
 fn store_install() -> bool {
@@ -216,15 +205,5 @@ mod tests {
         assert_eq!(version_from_headers("HTTP/1.1 200 OK\r\n"), None);
         let not_a_version = "Location: https://github.com/briedis/deeraw/releases/tag/latest\r\n";
         assert_eq!(version_from_headers(not_a_version), None);
-    }
-
-    #[test]
-    fn compares_versions_by_number() {
-        assert!(is_newer("0.7.0", "0.6.2"));
-        assert!(is_newer("0.10.0", "0.9.0"));
-        assert!(is_newer("1.0.0", "0.99.99"));
-        assert!(!is_newer("0.6.2", "0.6.2"));
-        assert!(!is_newer("0.6.1", "0.6.2"));
-        assert!(!is_newer("junk", "0.6.2"));
     }
 }

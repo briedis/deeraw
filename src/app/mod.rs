@@ -56,6 +56,8 @@ struct Settings {
     /// "Remind me later": no update window on launch before this (Unix seconds).
     update_reminder: Option<i64>,
     preferences: Preferences,
+    /// The version that ran last; when this one is newer, it opens with "What's new" (`whats_new_since`).
+    last_version: Option<String>,
 }
 
 /// What File > Preferences… sets.
@@ -198,6 +200,8 @@ pub struct DeerawApp {
     intro_dismissed: bool,
     show_about: bool,
     show_changelog: bool,
+    /// The Changelog window shows only the releases after this version, as "What's new" after an update.
+    whats_new_since: Option<String>,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     show_preferences: bool,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
@@ -240,11 +244,18 @@ pub struct DeerawApp {
 
 impl DeerawApp {
     pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
-        let settings = storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
+        let settings: Settings = storage.and_then(|s| eframe::get_value(s, SETTINGS_KEY)).unwrap_or_default();
         let paste_on_start = std::env::args().any(|a| a == "--paste");
         #[cfg(any(target_os = "macos", windows))]
         let screenshot_on_start = std::env::args().any(|a| a == "--screenshot");
         let mut app = Self { paste_on_start, ..Default::default() };
+        // Not on a first run, which has nothing to compare with.
+        if let Some(last) = settings.last_version.as_deref()
+            && menu::is_newer(env!("CARGO_PKG_VERSION"), last)
+        {
+            app.whats_new_since = Some(last.to_string());
+            app.show_changelog = true;
+        }
         app.apply_settings(settings);
         #[cfg(any(target_os = "macos", windows))]
         {
@@ -265,11 +276,13 @@ impl DeerawApp {
             skipped_version: self.skipped_version.clone(),
             update_reminder: self.update_reminder,
             preferences: self.preferences,
+            last_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         }
     }
 
     fn apply_settings(&mut self, settings: Settings) {
-        let Settings { style, background, save_dir, skipped_version, update_reminder, preferences } = settings;
+        let Settings { style, background, save_dir, skipped_version, update_reminder, preferences, last_version: _ } =
+            settings;
         self.style = style;
         self.background = background;
         self.save_dir = save_dir;

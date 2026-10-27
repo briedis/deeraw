@@ -4,7 +4,7 @@ use eframe::egui::{self, ColorImage, Vec2};
 
 use super::DeerawApp;
 use crate::ICON_PNG;
-use crate::widgets::{dialog, menu_item};
+use crate::widgets::{DIALOG_MARGIN, dialog, menu_item};
 
 impl DeerawApp {
     /// File, Edit and Help menus. Cut/Copy/Paste go through egui's clipboard events, so they
@@ -123,40 +123,67 @@ impl DeerawApp {
         self.show_about = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
     }
 
-    /// CHANGELOG.md as built into the app: a heading per release, its items as bullets.
+    /// CHANGELOG.md as built into the app: a heading per release, its items as bullets. After an update
+    /// (`whats_new_since`) it's "What's new", with only the releases since the version that ran before.
     pub(super) fn changelog_window(&mut self, ctx: &egui::Context) {
         if !self.show_changelog {
             return;
         }
         let mut open = true;
-        dialog(ctx, "Changelog", &mut open, |ui| {
+        let since = self.whats_new_since.clone();
+        let title = if since.is_some() { "What's new" } else { "Changelog" };
+        dialog(ctx, title, &mut open, |ui| {
             ui.set_width(CHANGELOG_WIDTH);
-            egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.7).show(ui, |ui| {
-                // Room on the right for the scroll bar.
-                ui.set_width(CHANGELOG_WIDTH - 12.0);
-                for (i, section) in changelog_sections(CHANGELOG).into_iter().enumerate() {
-                    if i > 0 {
-                        ui.add(egui::Separator::default().spacing(CHANGELOG_RELEASE_SPACING));
-                    }
-                    let (version, date) = section.title.split_once(' ').unwrap_or((section.title, ""));
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(version).strong().size(15.0));
-                        ui.weak(date.trim_matches(['(', ')']));
-                        if version == env!("CARGO_PKG_VERSION") {
-                            ui.weak("· this version");
+            if let Some(since) = &since {
+                ui.label(egui::RichText::new(format!("Deeraw was updated to {}.", env!("CARGO_PKG_VERSION"))).strong());
+                ui.weak(format!("Here's what changed since {since}:"));
+                ui.add_space(4.0);
+            }
+            let sections = changelog_sections(CHANGELOG)
+                .into_iter()
+                .filter(|s| since.as_ref().is_none_or(|since| is_newer(s.version(), since)));
+            // The list reaches into the window's right margin, so the scroll bar sits there, clear of the text.
+            let margin = egui::Margin { right: DIALOG_MARGIN as i8, ..Default::default() };
+            let outside = egui::Margin { right: -margin.right, ..Default::default() };
+            egui::Frame::NONE.outer_margin(outside).show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(ctx.content_rect().height() * 0.55)
+                    .content_margin(margin)
+                    .show(ui, |ui| {
+                        for (i, section) in sections.enumerate() {
+                            if i > 0 {
+                                ui.add(egui::Separator::default().spacing(CHANGELOG_RELEASE_SPACING));
+                            }
+                            let version = section.version();
+                            let date = section.title[version.len()..].trim().trim_matches(['(', ')']);
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(version).strong().size(15.0));
+                                ui.weak(date);
+                                if version == env!("CARGO_PKG_VERSION") {
+                                    ui.weak("· this version");
+                                }
+                            });
+                            for item in &section.items {
+                                ui.horizontal_top(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 8.0;
+                                    ui.label("•");
+                                    ui.add(egui::Label::new(item).wrap());
+                                });
+                            }
                         }
                     });
-                    for item in &section.items {
-                        ui.horizontal_top(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            ui.label("•");
-                            ui.add(egui::Label::new(item).wrap());
-                        });
-                    }
-                }
             });
+            if since.is_some() {
+                ui.add_space(4.0);
+                if ui.button("Full changelog").clicked() {
+                    self.whats_new_since = None;
+                }
+            }
         });
         self.show_changelog = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if !self.show_changelog {
+            self.whats_new_since = None;
+        }
     }
 }
 
@@ -191,6 +218,25 @@ struct ChangelogSection<'a> {
     title: &'a str,
     /// Its `- ` items (or plain paragraphs), each with its indented continuation lines joined on.
     items: Vec<String>,
+}
+
+pub(super) fn parse_version(version: &str) -> Option<Vec<u32>> {
+    version.split('.').map(|part| part.parse().ok()).collect()
+}
+
+/// Whether `latest` is a later version than `current` (by number, so 0.10.0 is after 0.9.0).
+pub(super) fn is_newer(latest: &str, current: &str) -> bool {
+    match (parse_version(latest), parse_version(current)) {
+        (Some(latest), Some(current)) => latest > current,
+        _ => false,
+    }
+}
+
+impl ChangelogSection<'_> {
+    /// "0.8.1" from "0.8.1 (2026-10-27)" ("Unreleased" stays as it is).
+    fn version(&self) -> &str {
+        self.title.split_once(' ').map_or(self.title, |(version, _)| version)
+    }
 }
 
 fn changelog_sections(markdown: &str) -> Vec<ChangelogSection<'_>> {
@@ -230,6 +276,17 @@ mod tests {
         assert_eq!(sections[0].title, "0.2.0 (2026-10-20)");
         assert_eq!(sections[0].items, ["One", "Two, continued."]);
         assert_eq!(sections[1].items, ["First release."]);
+        assert_eq!((sections[0].version(), sections[1].version()), ("0.2.0", "0.1.0"));
+    }
+
+    #[test]
+    fn compares_versions_by_number() {
+        assert!(is_newer("0.7.0", "0.6.2"));
+        assert!(is_newer("0.10.0", "0.9.0"));
+        assert!(is_newer("1.0.0", "0.99.99"));
+        assert!(!is_newer("0.6.2", "0.6.2"));
+        assert!(!is_newer("0.6.1", "0.6.2"));
+        assert!(!is_newer("junk", "0.6.2"));
     }
 
     #[test]

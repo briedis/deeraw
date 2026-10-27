@@ -5,6 +5,7 @@ What changed in each release. Ctrl means Cmd on macOS.
 ## Unreleased
 
 - Roomier menus, and the Changelog, About, Preferences and update windows share one roomier layout.
+- After an update, Deeraw opens with what's new: the changes in every release since the version you had.
 
 ## 0.8.1 (2026-10-27)
 

@@ -245,8 +245,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    - Cut (Ctrl+X) copies only the selected objects as a PNG and deletes them; Copy still copies
      everything. Exports carry their own snapshot of objects (`Export::new`) for that reason.
    - Help: View on GitHub (opens `repository` from Cargo.toml in the browser); Changelog (`changelog_window`:
-     CHANGELOG.md built in with `include_str!`, a bold heading per `## ` release, "(this version)" on the running
-     one, its items as bullets, scrollable); Check for updates… (native; see 11); About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
+     CHANGELOG.md built in with `include_str!`, a bold heading per `## ` release, "· this version" on the running
+     one, its items as bullets, scrollable). After an update it opens on launch as "What's new" (`whats_new_since`):
+     only the releases newer than `last_version` (in `Settings`, the version that ran last; none on a first run), and a
+     Full changelog button; Check for updates… (native; see 11); About Deeraw — logo, name, tagline (`description` in Cargo.toml), version and author
      (`authors`), read with `env!`. Escape or × closes it. It also links the license.
 10. **Remembered settings** — the style (color, sizes, pen, arrow heads, alignment, fill), the canvas
     background and the last file folder survive a relaunch, via eframe's `persistence` feature
