@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.8.0 (2026-10-27)
 
 - Line is now a mode of the Arrow tool (one toolbar button fewer): pick Arrow or Line in the style panel, or press
   L. Picking it with arrows or lines selected turns them into the other.
