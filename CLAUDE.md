@@ -88,7 +88,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several
    selected, each gets an outline and there are no resize handles. Hit-testing uses the bounding box, except
    arrows (see below).
-4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key): first (macOS and Windows, then a separator) Screenshot, then Select, Pencil, Arrow, Line, Shape, Blur (a droplet), Text, plus Crop while exactly one image is selected; after a vertical separator, Undo and Redo (U-turn arrows,
+4. **Toolbar** — floating at the bottom of the canvas: icon buttons (tooltips name them and their key): first (macOS and Windows, then a separator) Screenshot, then Select, Pencil, Arrow (it shows the line icon in line mode), Shape, Blur (a droplet), Text, plus Crop while exactly one image is selected; after a vertical separator, Undo and Redo (U-turn arrows,
    faded while there's nothing to undo/redo; the Edit menu items are disabled then too); after another, the canvas background (a single swatch that opens the others, like a style panel section) and the zoom level as a plain percentage (fixed width, so the bar keeps its size). The icons are traced from the Deeraw icon set (32×32 grid) and painted as strokes in `widgets.rs` (`Icon`, `icon_button`), so no SVG renderer is needed. The toolbar and the style panel follow the canvas background (`canvas_ui_visuals` in `style.rs`): white with slate icons on a white or transparent canvas, dark gray with light icons on black; the active tool is a blue button with a white icon.
    - Screenshot (macOS; `app/screenshot.rs`): orders the window out and runs `screencapture -i` on a thread (drag an
      area, Space for a window, Escape cancels); the capture is placed like an opened image. The window is hidden and
@@ -102,7 +102,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      restoring Deeraw by hand also cancels, and so does the selection not opening within `OPEN_TIMEOUT`. The thread restores
      the window through Win32 (`bring_back`), attaching to the foreground window's input thread so
      `SetForegroundWindow` isn't refused by focus-stealing protection (without it, Deeraw came back behind).
-   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Line, S Shape, B Blur, T Text, C Crop;
+   Shortcuts (no modifiers, not while typing): V Select, P Pencil, A Arrow, L Arrow in line mode, S Shape, B Blur, T Text, C Crop;
    Escape goes back to Select and deselects everything (while cropping, it only ends the crop). Switching tools cancels a half-drawn shape or selection box.
    Button tooltips show the key.
    - Pencil: drag to draw a freehand stroke (it starts on press, so a click leaves a dot); stays in Pencil mode. Two pen styles (style panel):
@@ -120,7 +120,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      They're grabbed only within 6pt of the line.
      **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
      border is within 40pt of the pointer show a circle 16px outside each side's center (clear of the resize handles) (`anchor`);
-     with the Arrow or Line tool every object shows them, also before a drag (the one under the pointer filled);
+     with the Arrow tool every object shows them, also before a drag (the one under the pointer filled);
      an end within 12pt of a circle snaps to it (filled circle) and attaches (`bindings: [start, end]`,
      a `Binding { id, side }` each). Attached ends follow their object every frame; an arrow attached at only one end moves
      along whole (its free end shifts as much), one attached at both ends stretches (`follow_bindings`,
@@ -132,7 +132,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      from one (crosshair cursor) draws an arrow attached there without picking the Arrow tool, with the
      current arrow style, and selects it (`connect_ui` in `snap.rs`, registered after the objects so the
      press doesn't move them, before the selection handles so those still win).
-   - Line: like Arrow but without a head (same object kind, `heads: None`); stays in Line mode.
+   - Line: not a tool of its own but the Arrow tool's line mode (`Style::line`, picked with L or the style panel's
+     Arrow/Line button, first in the bar, like Shape's): draws an arrow without heads (`heads: None`). Picking Line or
+     Arrow for selected objects removes their heads or gives them the default ones. Connecting with Select always draws arrows.
    - Angle snapping (arrows and lines): a free end (not attached), while drawing or dragging its
      handle, snaps onto the horizontal, vertical or 45° line through the other end when within
      `ANGLE_SNAP_DEGREES` (2°) of it (`snap_angle` in geometry.rs, projected so its length along that line stays).
@@ -216,10 +218,10 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    Each background has a default ink: black on white/transparent, white on black. Switching the
    background while the drawing (or text) color is the old ink switches it to the new one (other colors
    are kept; existing objects are not recolored). Not in undo history.
-8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Line, Shape or Text is active,
+8. **Style panel** — a compact bar just above the toolbar while Pencil, Arrow, Shape or Text is active,
    or while a stroke, arrow, line, shape or text is selected. It shows the current color and size; clicking
    either expands its options upwards, centered above that button (picking one collapses it again). The panels stack: toolbar, then the style panel (centered above the current tool's button, or with Select above the tool that draws the first selected object, `tool_anchor`), then the open options (`style_anchor` is the open button's center, set by `style_toggle`). Colors: black, white,
-   red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Arrow heads (arrows, not lines; `ArrowHeads`/`Head` in `object.rs`): a start button (pointing left) and an end button (pointing right), each previewing that end and opening its options: none, open lines or solid triangle (default: none at the start, solid at the end). Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
+   red, orange, green, blue. Pen style (pencil and strokes): plain or hand-drawn. Arrow or line (the Arrow tool and arrows/lines). Arrow heads (arrows, not lines, so not in line mode; `ArrowHeads`/`Head` in `object.rs`): a start button (pointing left) and an end button (pointing right), each previewing that end and opening its options: none, open lines or solid triangle (default: none at the start, solid at the end). Size: line width (2/3/6/10px, for pencil and arrows; its button shows the stroke-width icon, the px in its tooltip) or font size
    (S/M/L/XL = 16/28/44/64px; non-preset sizes from resizing show as px); text and the Text tool
    also get an alignment button (3×3 grid; when the targets are only inline text, just a left/center/right row, which keeps the vertical part); shapes and the Shape tool also get "no border" among the line widths; text, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
@@ -312,7 +314,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   no text) and `ctx.copy_image()` writes PNG via arboard.
 - Not every Unicode glyph exists in egui's default fonts (e.g. `⬉` renders as a box); check
   toolbar icons visually.
-- Pencil/Arrow/Line use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
+- Pencil/Arrow use a custom bitmap crosshair and Text a custom I-beam (`outlined_cursor`) (`ctx.set_cursor_image`, which is sticky, so it's
   cleared every frame when not needed) because the stock `CursorIcon::Crosshair` disappeared. Panning shows
   pixel-art hands (`pixel_art_cursor`): on Windows `CursorIcon::Grab`/`Grabbing` are the four-way move arrows.
 - License: PolyForm Shield 1.0.0 (`LICENSE.md`, with a `Required Notice:` copyright line that

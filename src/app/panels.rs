@@ -179,7 +179,7 @@ impl DeerawApp {
             _ => (0..self.objects.len()).filter(|&i| self.editing == Some(self.objects[i].id)).collect(),
         };
         let (show_color, size_kinds) = match self.tool {
-            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape => (true, vec![SizeKind::Line]),
+            Tool::Pencil | Tool::Arrow | Tool::Shape => (true, vec![SizeKind::Line]),
             Tool::Blur => (false, vec![]),
             Tool::Text => (true, vec![SizeKind::Font]),
             Tool::Select => {
@@ -219,8 +219,21 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].hand_drawn_mut().map(|h| *h))
             .unwrap_or(self.style.hand_drawn);
-        let show_heads = match self.tool {
+        let is_arrow = |i: usize| matches!(self.objects[i].kind, Kind::Arrow { .. });
+        let show_arrow_kind = match self.tool {
             Tool::Arrow => true,
+            Tool::Select => targets.iter().any(|&i| is_arrow(i)),
+            _ => false,
+        };
+        let line = targets
+            .iter()
+            .find_map(|&i| match self.objects[i].kind {
+                Kind::Arrow { heads, .. } => Some(heads.is_none()),
+                _ => None,
+            })
+            .unwrap_or(self.style.line);
+        let show_heads = match self.tool {
+            Tool::Arrow => !self.style.line,
             Tool::Select => targets.iter().any(|&i| self.objects[i].arrow_heads_mut().is_some()),
             _ => false,
         };
@@ -285,6 +298,7 @@ impl DeerawApp {
             Some(StyleSection::Fill) if !show_fill => self.style_open = None,
             Some(StyleSection::Shape) if !show_shape => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
+            Some(StyleSection::ArrowKind) if !show_arrow_kind => self.style_open = None,
             Some(StyleSection::StartHead | StyleSection::EndHead) if !show_heads => self.style_open = None,
             _ => {}
         }
@@ -295,6 +309,7 @@ impl DeerawApp {
         let mut new_fill = None;
         let mut new_pen = None;
         let mut new_heads = None;
+        let mut new_line = None;
         let mut new_shape = None;
         let mut new_blur = None;
         let mut new_border = None;
@@ -309,6 +324,9 @@ impl DeerawApp {
                     ui.set_visuals(canvas_ui_visuals(self.background));
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.horizontal(|ui| {
+                            if show_arrow_kind {
+                                self.style_toggle(ui, StyleSection::ArrowKind, |ui, open| icon_button(ui, open, arrow_kind_icon(line), 14.0, arrow_kind_name(line)));
+                            }
                             if show_shape {
                                 self.style_toggle(ui, StyleSection::Shape, |ui, open| icon_button(ui, open, shape_icon(shape), 14.0, shape.name()));
                             }
@@ -372,6 +390,13 @@ impl DeerawApp {
                                 for option in Shape::ALL {
                                     if icon_button(ui, shape == option, shape_icon(option), 14.0, option.name()) {
                                         new_shape = Some(option);
+                                    }
+                                }
+                            }
+                            StyleSection::ArrowKind => {
+                                for option in [false, true] {
+                                    if icon_button(ui, line == option, arrow_kind_icon(option), 14.0, arrow_kind_name(option)) {
+                                        new_line = Some(option);
                                     }
                                 }
                             }
@@ -455,7 +480,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_line.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
             return;
         }
         self.style_open = None;
@@ -505,6 +530,15 @@ impl DeerawApp {
             for &i in &targets {
                 if let Some(h) = self.objects[i].arrow_heads_mut() {
                     *h = heads;
+                }
+            }
+        }
+        // Lines turn into arrows with the default heads.
+        if let Some(line) = new_line {
+            self.style.line = line;
+            for &i in &targets {
+                if let Kind::Arrow { heads, .. } = &mut self.objects[i].kind {
+                    *heads = (!line).then_some(heads.unwrap_or(self.style.arrow_heads));
                 }
             }
         }
@@ -605,8 +639,7 @@ impl DeerawApp {
                         for (tool, icon, hint) in [
                             (Tool::Select, Icon::Select, "Select (V)"),
                             (Tool::Pencil, Icon::Pencil, "Pencil (P)"),
-                            (Tool::Arrow, Icon::Arrow, "Arrow (A)"),
-                            (Tool::Line, Icon::Line, "Line (L)"),
+                            (Tool::Arrow, arrow_kind_icon(self.style.line), if self.style.line { "Line (L)" } else { "Arrow (A)" }),
                             (Tool::Shape, shape_icon(self.style.shape), "Shape (S)"),
                             (Tool::Blur, Icon::Blur, "Blur (B): drag on an image to pixelate that part"),
                             (Tool::Text, Icon::Text, "Text (T)"),
@@ -663,13 +696,21 @@ impl DeerawApp {
 fn drawing_tool(kind: &Kind) -> Option<Tool> {
     match kind {
         Kind::Stroke { .. } => Some(Tool::Pencil),
-        Kind::Arrow { heads: Some(_), .. } => Some(Tool::Arrow),
-        Kind::Arrow { .. } => Some(Tool::Line),
+        Kind::Arrow { .. } => Some(Tool::Arrow),
         Kind::Shape { .. } => Some(Tool::Shape),
         Kind::Blur { .. } => Some(Tool::Blur),
         Kind::Text { .. } => Some(Tool::Text),
         Kind::Image { .. } => None,
     }
+}
+
+/// The Arrow tool's icon and name in arrow or line mode.
+fn arrow_kind_icon(line: bool) -> Icon {
+    if line { Icon::Line } else { Icon::Arrow }
+}
+
+fn arrow_kind_name(line: bool) -> &'static str {
+    if line { "Line" } else { "Arrow" }
 }
 
 fn shape_icon(shape: Shape) -> Icon {

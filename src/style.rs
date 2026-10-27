@@ -29,6 +29,8 @@ pub enum StyleSection {
     Pen,
     /// Rectangle, ellipse or diamond.
     Shape,
+    /// Arrow or line (the Arrow tool draws both).
+    ArrowKind,
     /// What an arrow has at its start.
     StartHead,
     /// What an arrow has at its end.
@@ -60,6 +62,8 @@ pub struct Style {
     pub hand_drawn: bool,
     /// For arrows.
     pub arrow_heads: ArrowHeads,
+    /// Whether the Arrow tool draws lines (no heads) instead of arrows.
+    pub line: bool,
     /// For the Shape tool.
     pub shape: Shape,
     /// For blurs.
@@ -74,7 +78,7 @@ pub struct Style {
 
 impl Default for Style {
     fn default() -> Self {
-        Self { color: PALETTE[0].0, text_color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
+        Self { color: PALETTE[0].0, text_color: PALETTE[0].0, line_width: LINE_WIDTHS[1], font_px: FONT_SIZES[1], hand_drawn: false, arrow_heads: ArrowHeads::default(), line: false, shape: Shape::default(), blur: BlurStrength::default(), align: Align2::LEFT_TOP, fill: None, border: true }
     }
 }
 

@@ -78,8 +78,8 @@ enum Tool {
     #[default]
     Select,
     Pencil,
+    /// Also draws lines (`Style::line`).
     Arrow,
-    Line,
     Shape,
     Blur,
     Text,

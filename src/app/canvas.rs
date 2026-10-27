@@ -91,8 +91,10 @@ impl DeerawApp {
                         let tool = match key {
                             egui::Key::V | egui::Key::Escape => Some(Tool::Select),
                             egui::Key::P => Some(Tool::Pencil),
-                            egui::Key::A => Some(Tool::Arrow),
-                            egui::Key::L => Some(Tool::Line),
+                            egui::Key::A | egui::Key::L => {
+                                self.style.line = key == egui::Key::L;
+                                Some(Tool::Arrow)
+                            }
                             egui::Key::S => Some(Tool::Shape),
                             egui::Key::B => Some(Tool::Blur),
                             egui::Key::T => Some(Tool::Text),
@@ -149,7 +151,7 @@ impl DeerawApp {
         let selecting = self.tool == Tool::Select;
         // The Blur tool also selects, moves and resizes blurs (and only those).
         let blurring = self.tool == Tool::Blur;
-        let arrow_tool = matches!(self.tool, Tool::Arrow | Tool::Line);
+        let arrow_tool = self.tool == Tool::Arrow;
         let ctrl = ui.input(|i| i.modifiers.command);
         if !ui.input(|i| i.pointer.primary_down()) {
             self.move_drag = None;
@@ -296,8 +298,8 @@ impl DeerawApp {
             }
             Some(Drawing::Arrow(start, end, bindings)) => {
                 let stroke = Stroke::new(self.style.line_width * scale, self.style.color);
-                // Only the Line tool draws lines; connecting objects with Select draws arrows.
-                let heads = if self.tool == Tool::Line { ArrowHeads::NONE } else { self.style.arrow_heads };
+                // Only the Arrow tool draws lines; connecting objects with Select draws arrows.
+                let heads = if self.tool == Tool::Arrow && self.style.line { ArrowHeads::NONE } else { self.style.arrow_heads };
                 paint_arrow(&painter, to_screen_pos(*start), to_screen_pos(*end), stroke, scale, heads);
                 self.paint_snap_circles(&painter, ui.input(|i| i.pointer.hover_pos()), arrow_tool, bindings, to_screen_pos);
             }
@@ -481,7 +483,7 @@ impl DeerawApp {
         // The cursor image is sticky between frames, so it must be cleared explicitly.
         let cursor = match self.tool {
             _ if !background.hovered() => None,
-            Tool::Pencil | Tool::Arrow | Tool::Line | Tool::Shape | Tool::Blur => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
+            Tool::Pencil | Tool::Arrow | Tool::Shape | Tool::Blur => Some(self.crosshair.get_or_insert_with(crosshair_cursor)),
             Tool::Text => Some(self.i_beam.get_or_insert_with(i_beam_cursor)),
             Tool::Select => None,
         };
@@ -548,7 +550,7 @@ impl DeerawApp {
                     _ => {}
                 }
             }
-            Tool::Arrow | Tool::Line => {
+            Tool::Arrow => {
                 // Either end snaps to a nearby text or image side and attaches to it; a free end
                 // snaps to nearly horizontal, vertical or 45° lines.
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
@@ -646,8 +648,8 @@ impl DeerawApp {
                 self.add(rect, Kind::Stroke { points, pressures, color, width, hand_drawn });
             }
             Some(Drawing::Arrow(start, end, bindings)) if start.distance(end) >= MIN_SIZE => {
-                let Style { color, line_width: width, arrow_heads, .. } = self.style;
-                let heads = (self.tool != Tool::Line).then_some(arrow_heads);
+                let Style { color, line_width: width, arrow_heads, line, .. } = self.style;
+                let heads = (self.tool != Tool::Arrow || !line).then_some(arrow_heads);
                 self.add(Rect::from_two_pos(start, end), Kind::Arrow { start, end, color, width, heads, bindings });
             }
             Some(Drawing::Shape(a, b)) => {

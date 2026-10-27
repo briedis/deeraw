@@ -2,6 +2,11 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Line is now a mode of the Arrow tool (one toolbar button fewer): pick Arrow or Line in the style panel, or press
+  L. Picking it with arrows or lines selected turns them into the other.
+
 ## 0.7.0 (2026-10-26)
 
 - Moving an image takes along the text, drawings, shapes and images on it (hold Alt to move just the image).
