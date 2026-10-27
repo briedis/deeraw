@@ -1,6 +1,6 @@
 //! Small custom buttons for the menus and the style panel.
 
-use eframe::egui::{self, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
+use eframe::egui::{self, Align, Align2, Color32, Pos2, Rect, Stroke, StrokeKind, Vec2, epaint::PathShape};
 
 use crate::object::{ArrowHeads, BlurStrength, Head};
 use crate::paint::{paint_arrow, paint_checkerboard};
@@ -157,16 +157,24 @@ pub fn align_name(align: Align2) -> String {
     }
 }
 
-/// A selectable alignment button: a box with a small block where the text sits.
-pub fn align_button(ui: &mut egui::Ui, selected: bool, align: Align2) -> bool {
-    let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(22.0));
-    let response = ui.add(button).on_hover_text(format!("Align {}", align_name(align)));
-    let frame = Rect::from_center_size(response.rect.center(), Vec2::splat(14.0));
-    let color = ui.visuals().text_color();
-    ui.painter().rect_stroke(frame, 1.0, Stroke::new(1.0, color.gamma_multiply(0.5)), StrokeKind::Inside);
-    let block = align.align_size_within_rect(Vec2::new(8.0, 4.0), frame.shrink(2.0));
-    ui.painter().rect_filled(block, 0.0, color);
-    pressed(ui, &response)
+/// A selectable horizontal alignment button (lines of text, like a word processor's); true when clicked.
+pub fn align_x_button(ui: &mut egui::Ui, selected: bool, x: Align) -> bool {
+    let (icon, name) = match x {
+        Align::Min => (Icon::AlignLeft, "left"),
+        Align::Center => (Icon::AlignCenter, "center"),
+        Align::Max => (Icon::AlignRight, "right"),
+    };
+    icon_button(ui, selected, icon, 14.0, &format!("Align {name}"))
+}
+
+/// A selectable vertical alignment button (lines at the top, middle or bottom of a box); true when clicked.
+pub fn align_y_button(ui: &mut egui::Ui, selected: bool, y: Align) -> bool {
+    let (icon, name) = match y {
+        Align::Min => (Icon::AlignTop, "top"),
+        Align::Center => (Icon::AlignMiddle, "middle"),
+        Align::Max => (Icon::AlignBottom, "bottom"),
+    };
+    icon_button(ui, selected, icon, 14.0, &format!("Align {name}"))
 }
 
 /// A button icon, traced from the Deeraw icon set.
@@ -192,6 +200,14 @@ pub enum Icon {
     Undo,
     /// A U-turn arrow pointing right.
     Redo,
+    /// Lines of text aligned left, centered or right.
+    AlignLeft,
+    AlignCenter,
+    AlignRight,
+    /// Two lines at the top, middle or bottom of a box.
+    AlignTop,
+    AlignMiddle,
+    AlignBottom,
 }
 
 /// The icon set's stroke width, on its 32×32 grid.
@@ -260,6 +276,39 @@ impl Icon {
                     false,
                     W,
                 ),
+            ],
+            Icon::AlignLeft => &[
+                (&[[5.0, 7.0], [27.0, 7.0]], false, W),
+                (&[[5.0, 13.0], [19.0, 13.0]], false, W),
+                (&[[5.0, 19.0], [27.0, 19.0]], false, W),
+                (&[[5.0, 25.0], [19.0, 25.0]], false, W),
+            ],
+            Icon::AlignCenter => &[
+                (&[[5.0, 7.0], [27.0, 7.0]], false, W),
+                (&[[9.0, 13.0], [23.0, 13.0]], false, W),
+                (&[[5.0, 19.0], [27.0, 19.0]], false, W),
+                (&[[9.0, 25.0], [23.0, 25.0]], false, W),
+            ],
+            Icon::AlignRight => &[
+                (&[[5.0, 7.0], [27.0, 7.0]], false, W),
+                (&[[13.0, 13.0], [27.0, 13.0]], false, W),
+                (&[[5.0, 19.0], [27.0, 19.0]], false, W),
+                (&[[13.0, 25.0], [27.0, 25.0]], false, W),
+            ],
+            Icon::AlignTop => &[
+                (&[[4.0, 4.0], [28.0, 4.0], [28.0, 28.0], [4.0, 28.0]], true, 2.0),
+                (&[[10.0, 10.0], [22.0, 10.0]], false, W),
+                (&[[10.0, 15.0], [22.0, 15.0]], false, W),
+            ],
+            Icon::AlignMiddle => &[
+                (&[[4.0, 4.0], [28.0, 4.0], [28.0, 28.0], [4.0, 28.0]], true, 2.0),
+                (&[[10.0, 13.5], [22.0, 13.5]], false, W),
+                (&[[10.0, 18.5], [22.0, 18.5]], false, W),
+            ],
+            Icon::AlignBottom => &[
+                (&[[4.0, 4.0], [28.0, 4.0], [28.0, 28.0], [4.0, 28.0]], true, 2.0),
+                (&[[10.0, 17.0], [22.0, 17.0]], false, W),
+                (&[[10.0, 22.0], [22.0, 22.0]], false, W),
             ],
         }
     }

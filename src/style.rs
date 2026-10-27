@@ -35,7 +35,10 @@ pub enum StyleSection {
     StartHead,
     /// What an arrow has at its end.
     EndHead,
-    Align,
+    /// Left, center or right.
+    AlignX,
+    /// Top, middle or bottom (text boxes).
+    AlignY,
     Fill,
 }
 

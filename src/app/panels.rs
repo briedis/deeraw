@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, align_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, pressed, size_button};
+use crate::widgets::{Icon, align_x_button, align_y_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, pen_button, pressed, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -256,10 +256,9 @@ impl DeerawApp {
             .iter()
             .find_map(|&i| self.objects[i].align_mut().map(|a| *a))
             .unwrap_or(self.style.align);
-        // Only inline text (no box): just left/center/right, shown vertically centered.
+        // Vertical alignment is for text boxes: not shown when the targets are only inline text.
         let text_with = |boxed: bool| targets.iter().any(|&i| matches!(&self.objects[i].kind, Kind::Text { frame, .. } if frame.is_some() == boxed));
-        let inline = text_with(false) && !text_with(true);
-        let shown_align = if inline { Align2([align.x(), egui::Align::Center]) } else { align };
+        let show_align_y = show_align && (text_with(true) || !text_with(false));
         let show_shape = match self.tool {
             Tool::Shape => true,
             Tool::Select => targets.iter().any(|&i| self.objects[i].shape_mut().is_some()),
@@ -300,7 +299,8 @@ impl DeerawApp {
         match self.style_open {
             Some(StyleSection::Color) if !show_color => self.style_open = None,
             Some(StyleSection::Size(kind)) if !size_kinds.contains(&kind) => self.style_open = None,
-            Some(StyleSection::Align) if !show_align => self.style_open = None,
+            Some(StyleSection::AlignX) if !show_align => self.style_open = None,
+            Some(StyleSection::AlignY) if !show_align_y => self.style_open = None,
             Some(StyleSection::Fill) if !show_fill => self.style_open = None,
             Some(StyleSection::Shape) if !show_shape => self.style_open = None,
             Some(StyleSection::Pen) if !show_pen => self.style_open = None,
@@ -311,7 +311,8 @@ impl DeerawApp {
 
         let mut new_color = None;
         let mut new_size = None;
-        let mut new_align = None;
+        let mut new_align_x = None;
+        let mut new_align_y = None;
         let mut new_fill = None;
         let mut new_pen = None;
         let mut new_heads = None;
@@ -367,7 +368,10 @@ impl DeerawApp {
                                 });
                             }
                             if show_align {
-                                self.style_toggle(ui, StyleSection::Align, |ui, open| align_button(ui, open, shown_align));
+                                self.style_toggle(ui, StyleSection::AlignX, |ui, open| align_x_button(ui, open, align.x()));
+                            }
+                            if show_align_y {
+                                self.style_toggle(ui, StyleSection::AlignY, |ui, open| align_y_button(ui, open, align.y()));
                             }
                             if show_fill {
                                 self.style_toggle(ui, StyleSection::Fill, |ui, open| color_swatch(ui, open, &fill_name(fill), fill));
@@ -458,27 +462,19 @@ impl DeerawApp {
                                     }
                                 }
                             }
-                            StyleSection::Align if inline => {
-                                // Keeps the vertical part, which text boxes use.
+                            StyleSection::AlignX => {
                                 for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                    if align_button(ui, align.x() == x, Align2([x, egui::Align::Center])) {
-                                        new_align = Some(Align2([x, align.y()]));
+                                    if align_x_button(ui, align.x() == x, x) {
+                                        new_align_x = Some(x);
                                     }
                                 }
                             }
-                            StyleSection::Align => {
-                                ui.vertical(|ui| {
-                                    for y in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                        ui.horizontal(|ui| {
-                                            for x in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                                                let option = Align2([x, y]);
-                                                if align_button(ui, align == option, option) {
-                                                    new_align = Some(option);
-                                                }
-                                            }
-                                        });
+                            StyleSection::AlignY => {
+                                for y in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    if align_y_button(ui, align.y() == y, y) {
+                                        new_align_y = Some(y);
                                     }
-                                });
+                                }
                             }
                         });
                     });
@@ -486,7 +482,7 @@ impl DeerawApp {
             redo_frame_if_resized(ui.ctx(), &area.response);
         }
 
-        if new_color.is_none() && new_size.is_none() && new_align.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_line.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
+        if new_color.is_none() && new_size.is_none() && new_align_x.is_none() && new_align_y.is_none() && new_fill.is_none() && new_pen.is_none() && new_heads.is_none() && new_line.is_none() && new_shape.is_none() && new_blur.is_none() && new_border.is_none() {
             return;
         }
         self.style_open = None;
@@ -564,11 +560,15 @@ impl DeerawApp {
                 }
             }
         }
-        if let Some(align) = new_align {
-            self.style.align = align;
+        // Each axis on its own, so the other one stays as each object has it.
+        let set_axis = |a: &mut Align2| {
+            *a = Align2([new_align_x.unwrap_or(a.x()), new_align_y.unwrap_or(a.y())]);
+        };
+        if new_align_x.is_some() || new_align_y.is_some() {
+            set_axis(&mut self.style.align);
             for &i in &targets {
                 if let Some(a) = self.objects[i].align_mut() {
-                    *a = align;
+                    set_axis(a);
                 }
             }
         }
