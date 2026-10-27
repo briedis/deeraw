@@ -65,6 +65,8 @@ impl DeerawApp {
                 if menu_item(ui, "Duplicate", command(Key::D), has_selection) {
                     self.duplicate_selected();
                 }
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
+                self.arrange_items(ui);
             });
             ui.menu_button("Help", |ui| {
                 ui.set_min_width(MENU_MIN_WIDTH);
@@ -192,13 +194,13 @@ const CHANGELOG_WIDTH: f32 = 520.0;
 const CHANGELOG_RELEASE_SPACING: f32 = 24.0;
 
 /// Narrowest a menu gets, so shortcuts sit well clear of their labels.
-const MENU_MIN_WIDTH: f32 = 200.0;
+pub(super) const MENU_MIN_WIDTH: f32 = 200.0;
 
 /// Height a separator takes in a menu, its line in the middle.
-const MENU_SEPARATOR_SPACING: f32 = 12.0;
+pub(super) const MENU_SEPARATOR_SPACING: f32 = 12.0;
 
 /// egui's menu style with roomier items: taller rows, a wider margin and more space around separators.
-fn menu_style(style: &mut egui::Style) {
+pub(super) fn menu_style(style: &mut egui::Style) {
     egui::containers::menu::menu_style(style);
     style.spacing.button_padding = Vec2::new(8.0, 4.0);
     style.spacing.item_spacing.y = 2.0;

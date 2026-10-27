@@ -2,6 +2,7 @@
 
 use eframe::egui::{self, Align2, CursorIcon, FontId, PointerButton, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2};
 
+use super::arrange::Arrange;
 use super::snap::ALIGN_DISTANCE;
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
@@ -125,7 +126,11 @@ impl DeerawApp {
                             #[cfg(not(target_arch = "wasm32"))]
                             egui::Key::Comma => self.show_preferences = true,
                             egui::Key::A => self.select_all(),
-                            _ => {}
+                            _ => {
+                                if let Some(to) = Arrange::from_key(key, modifiers.shift) {
+                                    self.arrange_selected(to);
+                                }
+                            }
                         }
                         let objects = &self.objects;
                         self.selected.retain(|id| objects.iter().any(|o| o.id == *id));
@@ -161,6 +166,8 @@ impl DeerawApp {
         // Dragging any selected object moves all of them; applied after the loop.
         let mut move_by = Vec2::ZERO;
         let mut clicked = None;
+        // The object right-clicked, to open the context menu on.
+        let mut menu_on = None;
         for obj in &mut self.objects {
             let editing = self.editing == Some(obj.id);
             if let Kind::Text { text, font_px, color, align, frame, .. } = &obj.kind {
@@ -210,6 +217,9 @@ impl DeerawApp {
                 if response.clicked() {
                     clicked = Some(obj.id);
                 }
+                if response.secondary_clicked() {
+                    menu_on = Some(obj.id);
+                }
                 // Starting to drag an unselected object selects it (adds it with Ctrl), so the
                 // drag moves it; dragging a selected one keeps the whole selection.
                 if response.drag_started_by(PointerButton::Primary) && !self.selected.contains(&obj.id) {
@@ -247,6 +257,7 @@ impl DeerawApp {
         if let Some(id) = clicked {
             self.click_select(id, ctrl);
         }
+        self.context_menu(&background, menu_on);
         if move_by != Vec2::ZERO {
             // The selection's bounds snap to line up their center with other objects' centers;
             // only if it's all images, text and shapes (blurs, strokes and arrows move freely).

@@ -1,5 +1,6 @@
 //! The app: its state, the frame layout, and operations on the objects.
 
+mod arrange;
 mod blur;
 mod canvas;
 mod files;

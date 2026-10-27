@@ -83,6 +83,13 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    leaves them be.
    Min size 4px. Delete or Backspace removes the selected object(s); Ctrl+D duplicates them (copies offset by
    20px, on top, and selected). Ctrl+A selects everything (and switches to Select).
+   **Arranging** (`app/arrange.rs`): Bring to front (Ctrl+Shift+]), Bring forward (Ctrl+]), Send backward (Ctrl+[),
+   Send to back (Ctrl+Shift+[), in the Edit menu and the context menu. Right-clicking an object (with Select) selects it
+   unless it's already selected and opens that menu (the four, Duplicate, Delete) at the pointer; it's a `Popup` on the
+   canvas background, since arrows and shapes only have a widget near the pointer. What's on a selected image (`riders`)
+   moves along, and blurs go with their image and never move alone, so they stay above it. One step goes past the
+   nearest object the selection overlaps (non-overlapping ones would show no change), never past another selected one;
+   items that would change nothing are disabled.
    **Multi-select:** Ctrl+click (canvas or layers panel) toggles an object in the selection;
    dragging on empty canvas draws a selection box that selects objects entirely inside it
    (Ctrl adds to the selection). Dragging any selected object moves them all. With several

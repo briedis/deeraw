@@ -2,6 +2,11 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Right-click an object for a menu to bring it to front, forward, backward or to back, duplicate or delete it.
+  Also in the Edit menu, and with Ctrl+] / Ctrl+[ (one step) and Ctrl+Shift+] / Ctrl+Shift+[ (all the way).
+
 ## 0.9.0 (2026-10-27)
 
 - Roomier menus, and the Changelog, About, Preferences and update windows share one roomier layout.
