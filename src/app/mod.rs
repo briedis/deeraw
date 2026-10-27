@@ -23,6 +23,7 @@ use eframe::egui::{self, Color32, ColorImage, Pos2, Rect, Vec2};
 use crate::export::Export;
 use crate::geometry::mostly_inside;
 use crate::history::History;
+use crate::markdown;
 use crate::object::{Binding, Kind, Object, Outline};
 use crate::style::{Background, Style, StyleSection};
 
@@ -67,11 +68,13 @@ struct Preferences {
     /// Start a screenshot when Deeraw opens, as the launcher's `--screenshot` does.
     screenshot_on_launch: bool,
     check_for_updates: bool,
+    /// Format markdown in text (`markdown::set_enabled`); off shows it as typed.
+    markdown: bool,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { screenshot_on_launch: false, check_for_updates: true }
+        Self { screenshot_on_launch: false, check_for_updates: true, markdown: true }
     }
 }
 
@@ -298,6 +301,7 @@ impl eframe::App for DeerawApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        markdown::set_enabled(self.preferences.markdown);
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
             self.show_layers = !self.show_layers;
         }

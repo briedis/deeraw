@@ -6,7 +6,7 @@ use super::snap::ALIGN_DISTANCE;
 use super::{DeerawApp, Drawing, MAX_ZOOM_LEVEL, MIN_TEXT_BOX, MIN_ZOOM_LEVEL, SELECTION_COLOR, Tool, ZOOM_STEP};
 use crate::cursor::{crosshair_cursor, grabbing_cursor, hand_cursor, i_beam_cursor};
 use crate::export::{Export, ExportTarget};
-use crate::markdown::toggle_marker;
+use crate::markdown::{self, toggle_marker};
 use crate::geometry::{MIN_SIZE, align_candidates, align_guides, align_offset, distance_to_outline, distance_to_segment, normalize, pan_for_zoom, snap_angle};
 use crate::object::{ArrowHeads, Kind};
 use crate::paint::{layout_text, paint_arrow, paint_row_fills, paint_text_outline, text_padding, paint_checkerboard, paint_mosaic, paint_object, paint_shape, text_layout_job};
@@ -691,8 +691,11 @@ impl DeerawApp {
         let font = FontId::proportional(*font_px * scale);
         let edit_id = egui::Id::unique(("text-edit", id));
         // Ctrl+B and Ctrl+I wrap the selected text in bold or italic markers (or unwrap it).
+        // Not with markdown off, where the markers would just show.
         let marker = ui.input_mut(|i| {
-            if i.consume_key(egui::Modifiers::COMMAND, egui::Key::B) {
+            if !markdown::enabled() {
+                None
+            } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::B) {
                 Some("**")
             } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::I) {
                 Some("*")

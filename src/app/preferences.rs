@@ -21,6 +21,12 @@ impl DeerawApp {
                 ui.checkbox(&mut self.preferences.check_for_updates, "Check for updates");
             });
             ui.add_space(8.0);
+            ui.label(egui::RichText::new("Text").strong());
+            ui.indent("text", |ui| {
+                ui.checkbox(&mut self.preferences.markdown, "Format markdown")
+                    .on_hover_text("**bold**, *italic*, ~~strikethrough~~, `code`, # headings and - lists.\nOff: text shows exactly as typed.");
+            });
+            ui.add_space(8.0);
             ui.separator();
             ui.add_space(8.0);
             ui.label(egui::RichText::new("Reset").strong());

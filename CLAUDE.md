@@ -274,7 +274,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 12. **Preferences** (native only, `app/preferences.rs`; File > Preferences…, Ctrl+,) — `Preferences` in `Settings`:
     "When Deeraw opens": Take a screenshot (macOS/Windows; `screenshot_on_launch`, starts one like `--screenshot`
     but adds it to the empty canvas instead of starting a new drawing) and Check for updates (`check_for_updates`,
-    on by default; Help > Check for updates… still works). Reset to defaults applies `Settings::default()`
+    on by default; Help > Check for updates… still works); "Text": Format markdown (`markdown`, on by default; off lays
+    text out as typed via `markdown::set_enabled`, a global the app sets every frame, and Ctrl+B/I do nothing). Reset to defaults applies `Settings::default()`
     (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
 
 ## Current state

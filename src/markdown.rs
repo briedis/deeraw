@@ -1,8 +1,10 @@
 //! Basic markdown in text objects: `**bold**`, `*italic*` (or `_italic_`), `~~strikethrough~~`
 //! and `` `code` `` within a line; `#`, `##` and `###` headings and `-`, `*` and `1.` list items
 //! at the start of one. The text is stored as typed; this only decides how it's laid out.
+//! Preferences can turn it off (`set_enabled`): then text shows exactly as typed.
 
 use std::ops::Range;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use eframe::egui::{self, Color32, FontFamily, FontId, Stroke, text::{LayoutJob, TextFormat}};
 
@@ -19,6 +21,18 @@ const LIST_INDENT: f32 = 0.6;
 const MARKER_OPACITY: f32 = 0.4;
 /// Opacity of the text color behind `code`.
 const CODE_BACKGROUND_OPACITY: f32 = 0.12;
+
+/// Whether markdown is formatted (Preferences), read wherever text is laid out: painting, measuring,
+/// editing and exports alike.
+static ENABLED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_enabled(enabled: bool) {
+    ENABLED.store(enabled, Ordering::Relaxed);
+}
+
+pub fn enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
+}
 
 /// Adds the bold font family to egui's default fonts.
 pub fn install_fonts(ctx: &egui::Context) {
@@ -148,9 +162,13 @@ fn closer(rest: &str, marker: &str) -> bool {
 
 /// Lays out `text` with its markdown formatting at `font_px`. While `editing`, the markup stays
 /// in, faded (the layout's text must be exactly the edited text); otherwise it's hidden and
-/// bullets show as `•`. The caller sets wrapping and alignment.
+/// bullets show as `•`. The caller sets wrapping and alignment. Plain text when markdown is off.
 pub fn layout_job(text: &str, font_px: f32, color: Color32, editing: bool) -> LayoutJob {
     let mut job = LayoutJob { break_on_newline: true, ..Default::default() };
+    if !enabled() {
+        job.append(text, 0.0, TextFormat { font_id: FontId::proportional(font_px), color, ..Default::default() });
+        return job;
+    }
     let faded = color.gamma_multiply(MARKER_OPACITY);
     let format = |style: Style, px: f32, marker: bool| {
         let family = match (style.code && !marker, style.bold) {
