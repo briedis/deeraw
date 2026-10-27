@@ -226,7 +226,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    also get an alignment button (3×3 grid; when the targets are only inline text, just a left/center/right row, which keeps the vertical part); shapes and the Shape tool also get "no border" among the line widths; text, shapes and the Text and Shape tools get a fill button
    (transparent or a palette color). Shapes also get a shape button (rectangle, ellipse, diamond), first in the bar.
    The Blur tool and selected blurs get only the three strength buttons, in the bar itself (no section).
-   With a drawing tool it sets the style of new objects; with a selection it restyles every
+   With a drawing tool it sets the style of new objects and also restyles the selected objects that tool draws
+   (so the one just drawn; `drawing_tool`); with a selection it restyles every
    selected object that has that setting (undoable) and also becomes the default. Text has its own
    color (`text_color`), separate from the one strokes, arrows, lines and shapes share; recoloring a
    selection sets the default of each kind in it. A mixed

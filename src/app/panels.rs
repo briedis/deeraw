@@ -175,8 +175,14 @@ impl DeerawApp {
             Tool::Blur => (0..self.objects.len())
                 .filter(|&i| self.selected.contains(&self.objects[i].id) && self.objects[i].blur_strength_mut().is_some())
                 .collect(),
-            // While typing with the Text tool, its style applies to that text too.
-            _ => (0..self.objects.len()).filter(|&i| self.editing == Some(self.objects[i].id)).collect(),
+            // A drawing tool also restyles the selected objects it draws (such as the one just drawn),
+            // and the Text tool the text being typed.
+            tool => (0..self.objects.len())
+                .filter(|&i| {
+                    let obj = &self.objects[i];
+                    self.editing == Some(obj.id) || (self.selected.contains(&obj.id) && drawing_tool(&obj.kind) == Some(tool))
+                })
+                .collect(),
         };
         let (show_color, size_kinds) = match self.tool {
             Tool::Pencil | Tool::Arrow | Tool::Shape => (true, vec![SizeKind::Line]),
