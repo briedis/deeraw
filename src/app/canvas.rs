@@ -690,15 +690,15 @@ impl DeerawApp {
         };
         let font = FontId::proportional(*font_px * scale);
         let edit_id = egui::Id::unique(("text-edit", id));
-        // Ctrl+B and Ctrl+I wrap the selected text in bold or italic markers (or unwrap it).
+        // Ctrl+B and Ctrl+I wrap the selected text in bold (`*`) or italic (`_`) markers (or unwrap it).
         // Not with markdown off, where the markers would just show.
         let marker = ui.input_mut(|i| {
             if !markdown::enabled() {
                 None
             } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::B) {
-                Some("**")
+                Some('*')
             } else if i.consume_key(egui::Modifiers::COMMAND, egui::Key::I) {
-                Some("*")
+                Some('_')
             } else {
                 None
             }

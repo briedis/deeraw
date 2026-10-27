@@ -1,4 +1,4 @@
-//! Basic markdown in text objects: `**bold**`, `*italic*` (or `_italic_`), `~~strikethrough~~`
+//! Basic markdown in text objects, with Slack's markers: `*bold*`, `_italic_`, `~strikethrough~`
 //! and `` `code` `` within a line; `#`, `##` and `###` headings and `-`, `*` and `1.` list items
 //! at the start of one. The text is stored as typed; this only decides how it's laid out.
 //! Preferences can turn it off (`set_enabled`): then text shows exactly as typed.
@@ -90,20 +90,21 @@ fn block(line: &str) -> (Block, usize) {
     (Block::Paragraph, 0)
 }
 
-/// Emphasis markers, longest first.
-const MARKERS: [&str; 4] = ["**", "~~", "*", "_"];
+/// Emphasis markers, as in Slack: `*bold*`, `_italic_`, `~strikethrough~`.
+const MARKERS: [char; 3] = ['*', '_', '~'];
 
-fn flag<'a>(style: &'a mut Style, marker: &str) -> &'a mut bool {
+fn flag(style: &mut Style, marker: char) -> &mut bool {
     match marker {
-        "**" => &mut style.bold,
-        "~~" => &mut style.strike,
-        _ => &mut style.italic,
+        '*' => &mut style.bold,
+        '_' => &mut style.italic,
+        _ => &mut style.strike,
     }
 }
 
-/// Splits a line (without its block prefix) into styled spans. A marker opens only before a
-/// non-space with a matching closer later in the line, and closes only after a non-space; `_`
-/// also not inside a word (snake_case stays as is). Anything else is literal text.
+/// Splits a line (without its block prefix) into styled spans. A marker opens only at the start
+/// of a word (not after a letter or digit), before a non-space, with a matching closer later in
+/// the line; it closes only after a non-space at the end of a word. A doubled marker (`**`) is
+/// literal. So `2*3*4`, `a * b`, snake_case and `~5 min` stay as they are.
 fn spans(line: &str) -> Vec<Span> {
     let mut spans = Vec::new();
     let mut style = Style::default();
@@ -129,24 +130,19 @@ fn spans(line: &str) -> Vec<Span> {
             text_start = i;
             continue;
         }
-        if let Some(marker) = MARKERS.into_iter().find(|m| rest.starts_with(m)) {
-            let after = rest[marker.len()..].chars().next();
-            let word = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
-            let space = |c: Option<char>| c.is_none_or(char::is_whitespace);
-            let applies = if *flag(&mut style, marker) {
-                !space(before) && !(marker == "_" && word(after))
-            } else {
-                !space(after) && !(marker == "_" && word(before)) && closer(&rest[marker.len()..], marker)
-            };
+        if let Some(marker) = rest.chars().next().filter(|c| MARKERS.contains(c)) {
+            let after = rest[1..].chars().next();
+            let applies = before != Some(marker)
+                && after != Some(marker)
+                && if *flag(&mut style, marker) { closes(before, after) } else { !space(after) && !word(before) && closer(&rest[1..], marker) };
             if applies {
                 push_text(&mut spans, text_start..i, style);
-                spans.push(Span { range: i..i + marker.len(), style, marker: true });
+                spans.push(Span { range: i..i + 1, style, marker: true });
                 let on = flag(&mut style, marker);
                 *on = !*on;
-                text_start = i + marker.len();
+                text_start = i + 1;
             }
-            // A double marker that doesn't apply is literal as a whole, not two single ones.
-            i += marker.len();
+            i += 1;
             continue;
         }
         i += rest.chars().next().map_or(1, char::len_utf8);
@@ -155,9 +151,25 @@ fn spans(line: &str) -> Vec<Span> {
     spans
 }
 
-/// Whether `rest` has a `marker` that could close one opened just before it (after a non-space).
-fn closer(rest: &str, marker: &str) -> bool {
-    rest.match_indices(marker).any(|(i, _)| rest[..i].chars().next_back().is_some_and(|c| !c.is_whitespace()))
+fn word(c: Option<char>) -> bool {
+    c.is_some_and(char::is_alphanumeric)
+}
+
+fn space(c: Option<char>) -> bool {
+    c.is_none_or(char::is_whitespace)
+}
+
+/// Whether a marker between `before` and `after` can close one: after a non-space, at a word's end.
+fn closes(before: Option<char>, after: Option<char>) -> bool {
+    !space(before) && !word(after)
+}
+
+/// Whether `rest` has a single `marker` that could close one opened just before it.
+fn closer(rest: &str, marker: char) -> bool {
+    rest.char_indices().filter(|&(_, c)| c == marker).any(|(i, _)| {
+        let (before, after) = (rest[..i].chars().next_back(), rest[i + 1..].chars().next());
+        before != Some(marker) && after != Some(marker) && closes(before, after)
+    })
 }
 
 /// Lays out `text` with its markdown formatting at `font_px`. While `editing`, the markup stays
@@ -229,30 +241,25 @@ pub fn layout_job(text: &str, font_px: f32, color: Color32, editing: bool) -> La
     job
 }
 
-/// Wraps the characters `start..end` (char indices) of `text` in `marker` (`**` or `*`), or
+/// Wraps the characters `start..end` (char indices) of `text` in `marker` (`*` or `_`), or
 /// unwraps them if the markers are already just outside or just inside. Returns the new
 /// selection, over the same characters; an empty one gets a pair of markers with the caret in it.
-pub fn toggle_marker(text: &mut String, start: usize, end: usize, marker: &str) -> (usize, usize) {
+pub fn toggle_marker(text: &mut String, start: usize, end: usize, marker: char) -> (usize, usize) {
     let byte = |c: usize| text.char_indices().nth(c).map_or(text.len(), |(b, _)| b);
     let (a, b) = (byte(start), byte(end));
-    let len = marker.len();
-    // `*` and `**` share a character: a run of 3 is both, a run of 2 is only bold.
-    let has = |run: usize| if len == 1 { run % 2 == 1 } else { run >= 2 };
-    let run_before = |s: &str| s.len() - s.trim_end_matches('*').len();
-    let run_after = |s: &str| s.len() - s.trim_start_matches('*').len();
     let (before, selected, after) = (&text[..a], &text[a..b], &text[b..]);
-    if has(run_before(before)) && has(run_after(after)) {
-        text.replace_range(b..b + len, "");
-        text.replace_range(a - len..a, "");
-        (start - len, end - len)
-    } else if selected.len() >= 2 * len && has(run_after(selected)) && has(run_before(selected)) {
-        text.replace_range(b - len..b, "");
-        text.replace_range(a..a + len, "");
-        (start, end - 2 * len)
+    if before.ends_with(marker) && after.starts_with(marker) {
+        text.remove(b);
+        text.remove(a - 1);
+        (start - 1, end - 1)
+    } else if selected.chars().count() >= 2 && selected.starts_with(marker) && selected.ends_with(marker) {
+        text.remove(b - 1);
+        text.remove(a);
+        (start, end - 2)
     } else {
-        text.insert_str(b, marker);
-        text.insert_str(a, marker);
-        (start + len, end + len)
+        text.insert(b, marker);
+        text.insert(a, marker);
+        (start + 1, end + 1)
     }
 }
 
@@ -271,29 +278,31 @@ mod tests {
 
     #[test]
     fn emphasis() {
-        assert_eq!(parts("a **b** c"), vec![("a ", false, PLAIN), ("**", true, PLAIN), ("b", false, BOLD_STYLE), ("**", true, BOLD_STYLE), (" c", false, PLAIN)]);
-        assert_eq!(parts("*i*"), vec![("*", true, PLAIN), ("i", false, ITALIC), ("*", true, ITALIC)]);
-        assert_eq!(parts("_i_")[1], ("i", false, ITALIC));
-        assert_eq!(parts("~~s~~")[1].2, Style { strike: true, ..PLAIN });
-        let all = parts("***x***");
-        assert_eq!(all[2], ("x", false, Style { bold: true, italic: true, ..PLAIN }));
-        assert_eq!(all.len(), 5);
+        assert_eq!(parts("a *b* c"), vec![("a ", false, PLAIN), ("*", true, PLAIN), ("b", false, BOLD_STYLE), ("*", true, BOLD_STYLE), (" c", false, PLAIN)]);
+        assert_eq!(parts("_i_"), vec![("_", true, PLAIN), ("i", false, ITALIC), ("_", true, ITALIC)]);
+        assert_eq!(parts("~s~")[1].2, Style { strike: true, ..PLAIN });
+        let both = parts("*_x_*");
+        assert_eq!(both[2], ("x", false, Style { bold: true, italic: true, ..PLAIN }));
+        assert_eq!(both.len(), 5);
+        assert_eq!(parts("(*b*).")[2], ("b", false, BOLD_STYLE));
     }
 
     #[test]
     fn literal_markers() {
-        // Unclosed, surrounded by spaces, or inside a word.
+        // Unclosed, surrounded by spaces, inside a word, or doubled.
         assert_eq!(parts("2 * 3 * 4"), vec![("2 * 3 * 4", false, PLAIN)]);
-        assert_eq!(parts("**open"), vec![("**open", false, PLAIN)]);
+        assert_eq!(parts("2*3*4"), vec![("2*3*4", false, PLAIN)]);
+        assert_eq!(parts("*open"), vec![("*open", false, PLAIN)]);
         assert_eq!(parts("snake_case_name"), vec![("snake_case_name", false, PLAIN)]);
-        assert_eq!(parts("a ** b ** c"), vec![("a ** b ** c", false, PLAIN)]);
+        assert_eq!(parts("~5 to ~10 min"), vec![("~5 to ~10 min", false, PLAIN)]);
+        assert_eq!(parts("**b**"), vec![("**b**", false, PLAIN)]);
         assert_eq!(parts("``"), vec![("``", false, PLAIN)]);
     }
 
     #[test]
     fn code_is_literal() {
         let code = Style { code: true, ..PLAIN };
-        assert_eq!(parts("`**x**`"), vec![("`", true, PLAIN), ("**x**", false, code), ("`", true, PLAIN)]);
+        assert_eq!(parts("`*x*`"), vec![("`", true, PLAIN), ("*x*", false, code), ("`", true, PLAIN)]);
     }
 
     #[test]
@@ -310,12 +319,12 @@ mod tests {
 
     #[test]
     fn editing_keeps_every_character() {
-        let text = "# Head\n- **a** *b*\n1. `c` ~~d~~\nsnake_case";
+        let text = "# Head\n- *a* _b_\n1. `c` ~d~\nsnake_case";
         assert_eq!(layout_job(text, 16.0, Color32::BLACK, true).text, text);
         assert_eq!(layout_job(text, 16.0, Color32::BLACK, false).text, "Head\n• a b\n1. c d\nsnake_case");
     }
 
-    fn toggled(text: &str, start: usize, end: usize, marker: &str) -> (String, (usize, usize)) {
+    fn toggled(text: &str, start: usize, end: usize, marker: char) -> (String, (usize, usize)) {
         let mut text = text.to_owned();
         let range = toggle_marker(&mut text, start, end, marker);
         (text, range)
@@ -323,14 +332,13 @@ mod tests {
 
     #[test]
     fn toggling_markers() {
-        assert_eq!(toggled("a b c", 2, 3, "**"), ("a **b** c".to_owned(), (4, 5)));
-        assert_eq!(toggled("a **b** c", 4, 5, "**"), ("a b c".to_owned(), (2, 3)));
-        assert_eq!(toggled("a **b** c", 2, 7, "**"), ("a b c".to_owned(), (2, 3)));
-        assert_eq!(toggled("ab", 1, 1, "*"), ("a**b".to_owned(), (2, 2)));
-        // Italic inside bold and back; bold doesn't count as italic.
-        assert_eq!(toggled("**b**", 2, 3, "*"), ("***b***".to_owned(), (3, 4)));
-        assert_eq!(toggled("***b***", 3, 4, "*"), ("**b**".to_owned(), (2, 3)));
-        assert_eq!(toggled("***b***", 3, 4, "**"), ("*b*".to_owned(), (1, 2)));
-        assert_eq!(toggled("ā ē", 2, 3, "*"), ("ā *ē*".to_owned(), (3, 4)));
+        assert_eq!(toggled("a b c", 2, 3, '*'), ("a *b* c".to_owned(), (3, 4)));
+        assert_eq!(toggled("a *b* c", 3, 4, '*'), ("a b c".to_owned(), (2, 3)));
+        assert_eq!(toggled("a *b* c", 2, 5, '*'), ("a b c".to_owned(), (2, 3)));
+        assert_eq!(toggled("ab", 1, 1, '_'), ("a__b".to_owned(), (2, 2)));
+        // Italic inside bold and back.
+        assert_eq!(toggled("*b*", 1, 2, '_'), ("*_b_*".to_owned(), (2, 3)));
+        assert_eq!(toggled("*_b_*", 2, 3, '_'), ("*b*".to_owned(), (1, 2)));
+        assert_eq!(toggled("ā ē", 2, 3, '_'), ("ā _ē_".to_owned(), (3, 4)));
     }
 }

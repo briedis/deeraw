@@ -180,13 +180,13 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      and never change the font. The box is outlined while editing. Escape or clicking elsewhere finishes; empty text is discarded.
      Double-click a text object to edit it; with Select, double-clicking empty space starts a text there (switching to Text). The Text tool stays active while typing (the style panel restyles that text too); finishing (Escape or clicking elsewhere) switches back to Select (`end_editing`). A press on the canvas ends typing before the tool sees it, so clicking away doesn't start another text.
      **Markdown** (`markdown.rs`): the text is stored as typed and laid out with basic formatting:
-     `**bold**`, `*italic*`/`_italic_`, `~~strike~~`, `` `code` `` (monospace on a faint background of
-     the text color) within a line; `#`/`##`/`###` headings (2×/1.5×/1.25× the font size, bold) and
-     `-`/`*` bullets (shown as `•`) and `1.` items (indented) at the start of one. A marker opens only before
-     a non-space with a closer later in the line, and `_` not inside a word, so `2 * 3` and snake_case stay
-     literal. While editing, the markup shows faded (the editor's layout must contain exactly the
-     edited text); otherwise it's hidden, so the rect shrinks when editing ends. Ctrl+B / Ctrl+I wrap the
-     selection in `**`/`*` or unwrap it (`toggle_marker`). Bold is Ubuntu Bold (`assets/fonts/`, Ubuntu Font
+     Slack's markers, one character each: `*bold*`, `_italic_`, `~strike~`, `` `code` `` (monospace on a faint
+     background of the text color) within a line; `#`/`##`/`###` headings (2×/1.5×/1.25× the font size, bold) and
+     `-`/`*` bullets (shown as `•`) and `1.` items (indented) at the start of one. A marker opens only at a word's
+     start before a non-space with a closer later in the line, and closes at a word's end; doubled (`**`) it's
+     literal, so `2*3`, `a * b`, snake_case and `~5 min` stay as typed. While editing, the markup shows faded (the
+     editor's layout must contain exactly the edited text); otherwise it's hidden, so the rect shrinks when editing
+     ends. Ctrl+B / Ctrl+I wrap the selection in `*`/`_` or unwrap it (`toggle_marker`). Bold is Ubuntu Bold (`assets/fonts/`, Ubuntu Font
      Licence like egui's default Ubuntu Light, which has no bold), registered as the `bold` font family
      (`install_fonts`); italic is egui's slant.
    - Crop: not a tool but a mode for one image. Enter it with the Crop button or C (shown/working only

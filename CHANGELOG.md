@@ -9,6 +9,7 @@ What changed in each release. Ctrl means Cmd on macOS.
 - Text, arrows and lines can have an outline (style panel), so they stand out on busy screenshots: automatic
   (black or white, whichever contrasts) or a palette color, 2, 4 or 6px.
 - Preferences: turn off markdown formatting in text, so it shows exactly as typed.
+- Text formatting uses Slack's markers: `*bold*`, `_italic_` and `~strikethrough~` (Ctrl+B and Ctrl+I add them).
 
 ## 0.8.1 (2026-10-27)
 
