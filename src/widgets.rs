@@ -7,6 +7,27 @@ use crate::paint::{paint_arrow, paint_checkerboard};
 use crate::stroke::paint_hand_drawn;
 use crate::style::{FONT_SIZES, SizeKind};
 
+/// Padding around a dialog's content (its title bar keeps egui's default).
+const DIALOG_MARGIN: f32 = 16.0;
+
+/// A fixed-size window in the middle of the screen, laid out alike for every dialog (About, Changelog,
+/// Preferences, updates): the same margins, row spacing and button size. Closed by its × (`open`).
+pub fn dialog(ctx: &egui::Context, title: &str, open: &mut bool, content: impl FnOnce(&mut egui::Ui)) {
+    let style = ctx.global_style();
+    egui::Window::new(title)
+        .open(open)
+        .collapsible(false)
+        .resizable(false)
+        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
+        .title_frame(egui::Frame::window(&style))
+        .frame(egui::Frame::window(&style).inner_margin(DIALOG_MARGIN))
+        .show(ctx, |ui| {
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
+            content(ui);
+        });
+}
+
 /// A menu entry with its keyboard shortcut shown on the right; true when clicked.
 pub fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: Option<egui::KeyboardShortcut>, enabled: bool) -> bool {
     let mut button = egui::Button::new(label);

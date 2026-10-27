@@ -2,6 +2,10 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Roomier menus, and the Changelog, About, Preferences and update windows share one roomier layout.
+
 ## 0.8.1 (2026-10-27)
 
 - The mouse wheel no longer zooms the canvas while a menu or a window (Preferences, Changelog, About) is open.

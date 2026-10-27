@@ -310,6 +310,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   of a frame.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
+- Dialogs (About, Changelog, Preferences, update) go through `dialog` in widgets.rs, so they share margins, spacing and
+  button size (the title bar keeps egui's default margin; `Window` pads it with the frame's margin otherwise). Menus
+  get roomier spacing from `menu_style` in menu.rs.
 - An `Area` with a pivot other than LEFT_TOP is placed using last frame's size, so it's misplaced for a frame when its content resizes; `redo_frame_if_resized` (panels.rs) discards that frame (`ctx.request_discard`).
 - Images are painted with linear sampling, so their screen rect is moved onto whole physical pixels
   (`snap_to_pixels` in paint.rs; blurs and the crop view follow); otherwise they look soft at 100%.

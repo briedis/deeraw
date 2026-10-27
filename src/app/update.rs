@@ -9,11 +9,12 @@
 
 use std::sync::mpsc;
 
-use eframe::egui::{self, Align2, Vec2};
+use eframe::egui;
 
 #[cfg(not(windows))]
 use super::Notice;
 use super::DeerawApp;
+use crate::widgets::dialog;
 
 /// The page that redirects to the latest release, `…/releases/tag/vX.Y.Z`.
 const LATEST_URL: &str = concat!(env!("CARGO_PKG_REPOSITORY"), "/releases/latest");
@@ -86,62 +87,56 @@ impl DeerawApp {
         };
         let mut open = true;
         let mut close = false;
-        egui::Window::new(title)
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .show(ctx, |ui| {
-                ui.set_min_width(300.0);
-                ui.add_space(4.0);
-                match window {
-                    UpdateWindow::Available(latest) => {
-                        ui.label(egui::RichText::new(format!("Deeraw {latest} is available.")).strong());
-                        ui.weak(format!("You have version {}.", env!("CARGO_PKG_VERSION")));
-                        ui.add_space(4.0);
-                        let page = format!("{}/releases/tag/v{latest}", env!("CARGO_PKG_REPOSITORY"));
-                        ui.hyperlink_to("What's new", &page);
-                        ui.add_space(8.0);
+        dialog(ctx, title, &mut open, |ui| {
+            ui.set_min_width(300.0);
+            match window {
+                UpdateWindow::Available(latest) => {
+                    ui.label(egui::RichText::new(format!("Deeraw {latest} is available.")).strong());
+                    ui.weak(format!("You have version {}.", env!("CARGO_PKG_VERSION")));
+                    ui.add_space(4.0);
+                    let page = format!("{}/releases/tag/v{latest}", env!("CARGO_PKG_REPOSITORY"));
+                    ui.hyperlink_to("What's new", &page);
+                    ui.add_space(8.0);
+                    #[cfg(windows)]
+                    ui.label("Get it from the Microsoft Store.");
+                    #[cfg(not(windows))]
+                    {
+                        ui.label("Update with Homebrew, in Terminal:");
+                        ui.code(BREW_UPGRADE);
+                    }
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
                         #[cfg(windows)]
-                        ui.label("Get it from the Microsoft Store.");
-                        #[cfg(not(windows))]
-                        {
-                            ui.label("Update with Homebrew, in Terminal:");
-                            ui.code(BREW_UPGRADE);
+                        if ui.button("Open Microsoft Store").clicked() {
+                            ctx.open_url(egui::OpenUrl::new_tab(STORE_URL));
+                            close = true;
                         }
-                        ui.add_space(8.0);
-                        ui.horizontal(|ui| {
-                            #[cfg(windows)]
-                            if ui.button("Open Microsoft Store").clicked() {
-                                ctx.open_url(egui::OpenUrl::new_tab(STORE_URL));
-                                close = true;
-                            }
-                            #[cfg(not(windows))]
-                            if ui.button("Copy command").clicked() {
-                                ctx.copy_text(BREW_UPGRADE.to_string());
-                                let pos = ctx.pointer_latest_pos();
-                                let shown_at = ctx.input(|i| i.time);
-                                self.notice = Some(Notice { text: "Copied".to_string(), pos, shown_at });
-                            }
-                            if ui.button("Remind me later").clicked() {
-                                self.update_reminder = Some(now() + REMIND_LATER_SECONDS);
-                                close = true;
-                            }
-                            if ui.button("Skip this version").clicked() {
-                                self.skipped_version = Some(latest.clone());
-                                close = true;
-                            }
-                        });
-                    }
-                    UpdateWindow::UpToDate => {
-                        ui.label(format!("Deeraw {} is the latest version.", env!("CARGO_PKG_VERSION")));
-                    }
-                    UpdateWindow::Failed => {
-                        ui.label("Couldn't reach GitHub to check for updates.");
-                    }
+                        #[cfg(not(windows))]
+                        if ui.button("Copy command").clicked() {
+                            ctx.copy_text(BREW_UPGRADE.to_string());
+                            let pos = ctx.pointer_latest_pos();
+                            let shown_at = ctx.input(|i| i.time);
+                            self.notice = Some(Notice { text: "Copied".to_string(), pos, shown_at });
+                        }
+                        if ui.button("Remind me later").clicked() {
+                            self.update_reminder = Some(now() + REMIND_LATER_SECONDS);
+                            close = true;
+                        }
+                        if ui.button("Skip this version").clicked() {
+                            self.skipped_version = Some(latest.clone());
+                            close = true;
+                        }
+                    });
                 }
-                ui.add_space(4.0);
-            });
+                UpdateWindow::UpToDate => {
+                    ui.label(format!("Deeraw {} is the latest version.", env!("CARGO_PKG_VERSION")));
+                }
+                UpdateWindow::Failed => {
+                    ui.label("Couldn't reach GitHub to check for updates.");
+                }
+            }
+            ui.add_space(4.0);
+        });
         if !open || close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.update_window = None;
         }

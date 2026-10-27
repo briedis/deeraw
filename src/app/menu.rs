@@ -1,10 +1,10 @@
 //! The menu bar, and the About and Changelog windows.
 
-use eframe::egui::{self, Align2, ColorImage, Vec2};
+use eframe::egui::{self, ColorImage, Vec2};
 
 use super::DeerawApp;
 use crate::ICON_PNG;
-use crate::widgets::menu_item;
+use crate::widgets::{dialog, menu_item};
 
 impl DeerawApp {
     /// File, Edit and Help menus. Cut/Copy/Paste go through egui's clipboard events, so they
@@ -14,33 +14,36 @@ impl DeerawApp {
         let command = |key| Some(KeyboardShortcut::new(Modifiers::COMMAND, key));
         let has_objects = !self.objects.is_empty();
         let has_selection = !self.selected.is_empty();
-        egui::MenuBar::new().ui(ui, |ui| {
+        let config = egui::containers::menu::MenuConfig::new().style(menu_style);
+        egui::MenuBar::new().style(menu_bar_style).config(config).ui(ui, |ui| {
             // The browser has no file dialogs and nothing to exit.
             #[cfg(not(target_arch = "wasm32"))]
             ui.menu_button("File", |ui| {
+                ui.set_min_width(MENU_MIN_WIDTH);
                 if menu_item(ui, "Open image…", command(Key::O), true) {
                     self.open_file();
                 }
                 if menu_item(ui, "Save as…", command(Key::S), has_objects) {
                     self.save_as();
                 }
-                ui.separator();
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
                 if menu_item(ui, "Preferences…", command(Key::Comma), true) {
                     self.show_preferences = true;
                 }
-                ui.separator();
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
                 if menu_item(ui, "Exit", command(Key::W), true) {
                     ui.send_viewport_cmd(ViewportCommand::Close);
                 }
             });
             ui.menu_button("Edit", |ui| {
+                ui.set_min_width(MENU_MIN_WIDTH);
                 if menu_item(ui, "Undo", command(Key::Z), self.history.can_undo()) {
                     self.history.undo(&mut self.objects);
                 }
                 if menu_item(ui, "Redo", command(Key::Y), self.history.can_redo()) {
                     self.history.redo(&mut self.objects);
                 }
-                ui.separator();
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
                 if menu_item(ui, "Cut", command(Key::X), has_selection) {
                     ui.send_viewport_cmd(ViewportCommand::RequestCut);
                 }
@@ -55,7 +58,7 @@ impl DeerawApp {
                 if menu_item(ui, "Delete", delete, has_selection) {
                     self.delete_selected();
                 }
-                ui.separator();
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
                 if menu_item(ui, "Select all", command(Key::A), has_objects) {
                     self.select_all();
                 }
@@ -64,6 +67,7 @@ impl DeerawApp {
                 }
             });
             ui.menu_button("Help", |ui| {
+                ui.set_min_width(MENU_MIN_WIDTH);
                 if menu_item(ui, "View on GitHub", None, true) {
                     ui.ctx().open_url(egui::OpenUrl::new_tab(env!("CARGO_PKG_REPOSITORY")));
                 }
@@ -74,7 +78,7 @@ impl DeerawApp {
                 if menu_item(ui, "Check for updates…", None, true) {
                     self.check_for_updates(ui.ctx(), true);
                 }
-                ui.separator();
+                ui.add(egui::Separator::default().spacing(MENU_SEPARATOR_SPACING));
                 if menu_item(ui, "About Deeraw", None, true) {
                     self.show_about = true;
                 }
@@ -96,31 +100,26 @@ impl DeerawApp {
         });
         let logo = egui::Image::new(&*logo).fit_to_exact_size(Vec2::splat(96.0));
         let mut open = true;
-        egui::Window::new("About Deeraw")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .show(ctx, |ui| {
-                ui.set_min_width(260.0);
-                ui.vertical_centered(|ui| {
-                    ui.add_space(8.0);
-                    ui.add(logo);
-                    ui.add_space(4.0);
-                    ui.heading("Deeraw");
-                    ui.label(env!("CARGO_PKG_DESCRIPTION"));
-                    ui.add_space(8.0);
-                    ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
-                    ui.weak(format!("by {}", env!("CARGO_PKG_AUTHORS")));
-                    ui.add_space(8.0);
-                    ui.weak("Free to use, at home or at work, under the");
-                    ui.hyperlink_to(
-                        "PolyForm Shield License 1.0.0",
-                        "https://polyformproject.org/licenses/shield/1.0.0",
-                    );
-                    ui.add_space(8.0);
-                });
+        dialog(ctx, "About Deeraw", &mut open, |ui| {
+            ui.set_min_width(260.0);
+            ui.vertical_centered(|ui| {
+                ui.add_space(8.0);
+                ui.add(logo);
+                ui.add_space(4.0);
+                ui.heading("Deeraw");
+                ui.label(env!("CARGO_PKG_DESCRIPTION"));
+                ui.add_space(8.0);
+                ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
+                ui.weak(format!("by {}", env!("CARGO_PKG_AUTHORS")));
+                ui.add_space(8.0);
+                ui.weak("Free to use, at home or at work, under the");
+                ui.hyperlink_to(
+                    "PolyForm Shield License 1.0.0",
+                    "https://polyformproject.org/licenses/shield/1.0.0",
+                );
+                ui.add_space(8.0);
             });
+        });
         self.show_about = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
     }
 
@@ -130,32 +129,59 @@ impl DeerawApp {
             return;
         }
         let mut open = true;
-        egui::Window::new("Changelog")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-            .show(ctx, |ui| {
-                ui.set_width(440.0);
-                egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.6).show(ui, |ui| {
-                    for section in changelog_sections(CHANGELOG) {
-                        let current = section.title.starts_with(concat!(env!("CARGO_PKG_VERSION"), " "));
-                        let title = if current { format!("{} (this version)", section.title) } else { section.title.to_string() };
-                        ui.add_space(6.0);
-                        ui.label(egui::RichText::new(title).strong().size(16.0));
-                        for item in &section.items {
-                            ui.horizontal_top(|ui| {
-                                ui.spacing_mut().item_spacing.x = 6.0;
-                                ui.label("•");
-                                ui.add(egui::Label::new(item).wrap());
-                            });
-                        }
+        dialog(ctx, "Changelog", &mut open, |ui| {
+            ui.set_width(CHANGELOG_WIDTH);
+            egui::ScrollArea::vertical().max_height(ctx.content_rect().height() * 0.7).show(ui, |ui| {
+                // Room on the right for the scroll bar.
+                ui.set_width(CHANGELOG_WIDTH - 12.0);
+                for (i, section) in changelog_sections(CHANGELOG).into_iter().enumerate() {
+                    if i > 0 {
+                        ui.add(egui::Separator::default().spacing(CHANGELOG_RELEASE_SPACING));
                     }
-                    ui.add_space(6.0);
-                });
+                    let (version, date) = section.title.split_once(' ').unwrap_or((section.title, ""));
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(version).strong().size(15.0));
+                        ui.weak(date.trim_matches(['(', ')']));
+                        if version == env!("CARGO_PKG_VERSION") {
+                            ui.weak("· this version");
+                        }
+                    });
+                    for item in &section.items {
+                        ui.horizontal_top(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            ui.label("•");
+                            ui.add(egui::Label::new(item).wrap());
+                        });
+                    }
+                }
             });
+        });
         self.show_changelog = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
     }
+}
+
+/// The Changelog window's text width and the height between releases (a line in the middle).
+const CHANGELOG_WIDTH: f32 = 520.0;
+const CHANGELOG_RELEASE_SPACING: f32 = 24.0;
+
+/// Narrowest a menu gets, so shortcuts sit well clear of their labels.
+const MENU_MIN_WIDTH: f32 = 200.0;
+
+/// Height a separator takes in a menu, its line in the middle.
+const MENU_SEPARATOR_SPACING: f32 = 12.0;
+
+/// egui's menu style with roomier items: taller rows, a wider margin and more space around separators.
+fn menu_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.spacing.button_padding = Vec2::new(8.0, 4.0);
+    style.spacing.item_spacing.y = 2.0;
+    style.spacing.menu_margin = egui::Margin::same(8);
+}
+
+/// The bar's File/Edit/Help buttons, padded like the items under them.
+fn menu_bar_style(style: &mut egui::Style) {
+    egui::containers::menu::menu_style(style);
+    style.spacing.button_padding = Vec2::new(8.0, 3.0);
 }
 
 const CHANGELOG: &str = include_str!("../../CHANGELOG.md");
