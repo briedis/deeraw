@@ -5,6 +5,7 @@ use eframe::egui::epaint::CubicBezierShape;
 
 use super::{DeerawApp, Tool};
 use crate::style::{Background, canvas_ui_visuals};
+use crate::widgets::shortcut_text;
 
 /// Width of the intro's column, in points.
 const WIDTH: f32 = 280.0;
@@ -67,7 +68,7 @@ impl DeerawApp {
                 .frame_when_inactive(false)
                 .min_size(Vec2::new(WIDTH, 32.0));
             // Always some shortcut text, so every label stays left-aligned.
-            let shortcut = shortcut.map_or(String::new(), |shortcut| ui.ctx().format_shortcut(&shortcut));
+            let shortcut = shortcut.map_or(String::new(), |shortcut| shortcut_text(ui.ctx(), &shortcut));
             let button = button.shortcut_text(egui::RichText::new(shortcut).color(text_color));
             ui.add(button).clicked()
         };

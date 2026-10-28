@@ -7,7 +7,7 @@ use crate::export::bounds;
 use crate::geometry::pan_for_zoom;
 use crate::object::{ArrowHeads, BlurStrength, Head, Kind, Outline, Shape};
 use crate::style::{Background, FONT_SIZES, LINE_WIDTHS, OUTLINE_WIDTHS, PALETTE, SizeKind, StyleSection, canvas_ui_visuals};
-use crate::widgets::{Icon, auto_color_button, align_x_button, align_y_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, outline_button, pen_button, pressed, size_button};
+use crate::widgets::{Icon, auto_color_button, align_x_button, align_y_button, arrow_head_button, align_name, blur_button, color_swatch, color_swatch_sized, icon_button, no_border_button, outline_button, pen_button, pressed, shortcut_text, size_button};
 
 /// How long a notice shows, in seconds, including its fade-out.
 const NOTICE_SECONDS: f64 = 2.5;
@@ -712,7 +712,7 @@ impl DeerawApp {
                         }
                         ui.separator();
                         // Disabled (faded) when there's nothing to undo or redo.
-                        let shortcut = |key| ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));
+                        let shortcut = |key| shortcut_text(ui.ctx(), &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));
                         let (undo_hint, redo_hint) = (format!("Undo ({})", shortcut(egui::Key::Z)), format!("Redo ({})", shortcut(egui::Key::Y)));
                         let can_undo = self.history.can_undo();
                         if ui.add_enabled_ui(can_undo, |ui| icon_button(ui, false, Icon::Undo, TOOLBAR_ICON_SIZE, &undo_hint)).inner {

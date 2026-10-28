@@ -47,11 +47,23 @@ fn show_dialog(ctx: &egui::Context, window: egui::Window, content: impl FnOnce(&
     }
 }
 
+/// `shortcut` as text, like `Context::format_shortcut`, but with keys like `]` shown as themselves:
+/// outside macOS egui writes the key's name ("Ctrl+CloseBracket"). Symbols that aren't ASCII (the
+/// arrows) keep their name, since egui only uses those where it knows the font has them.
+pub fn shortcut_text(ctx: &egui::Context, shortcut: &egui::KeyboardShortcut) -> String {
+    let text = ctx.format_shortcut(shortcut);
+    let key = shortcut.logical_key;
+    match text.strip_suffix(key.name()) {
+        Some(modifiers) if key.symbol_or_name().is_ascii() => format!("{modifiers}{}", key.symbol_or_name()),
+        _ => text,
+    }
+}
+
 /// A menu entry with its keyboard shortcut shown on the right; true when clicked.
 pub fn menu_item(ui: &mut egui::Ui, label: &str, shortcut: Option<egui::KeyboardShortcut>, enabled: bool) -> bool {
     let mut button = egui::Button::new(label);
     if let Some(shortcut) = shortcut {
-        button = button.shortcut_text(ui.ctx().format_shortcut(&shortcut));
+        button = button.shortcut_text(shortcut_text(ui.ctx(), &shortcut));
     }
     ui.add_enabled(enabled, button).clicked()
 }
@@ -430,4 +442,24 @@ pub fn pressed(ui: &egui::Ui, response: &egui::Response) -> bool {
     let (down, released, pos) = ui.input(|i| (i.pointer.primary_down(), i.pointer.primary_released(), i.pointer.interact_pos()));
     ui.data_mut(|d| d.insert_temp(id, down_on && down));
     response.clicked() || (down_on && released && pos.is_some_and(|p| response.rect.contains(p)))
+}
+
+#[cfg(test)]
+mod tests {
+    use egui::{Key, KeyboardShortcut, Modifiers};
+
+    use super::*;
+
+    #[test]
+    fn shortcuts_show_symbol_keys_as_themselves() {
+        let ctx = egui::Context::default();
+        ctx.set_os(egui::os::OperatingSystem::Windows);
+        let text = |modifiers, key| shortcut_text(&ctx, &KeyboardShortcut::new(modifiers, key));
+        assert_eq!(text(Modifiers::COMMAND | Modifiers::SHIFT, Key::CloseBracket), "Ctrl+Shift+]");
+        assert_eq!(text(Modifiers::COMMAND, Key::OpenBracket), "Ctrl+[");
+        assert_eq!(text(Modifiers::COMMAND, Key::Comma), "Ctrl+,");
+        assert_eq!(text(Modifiers::COMMAND, Key::Z), "Ctrl+Z");
+        assert_eq!(text(Modifiers::NONE, Key::Delete), "Delete");
+        assert_eq!(text(Modifiers::COMMAND, Key::ArrowUp), "Ctrl+Up");
+    }
 }
