@@ -1,4 +1,4 @@
-//! File > History…: a window with a thumbnail of every drawing in History, newest first. Clicking
+//! File > History…: a window (movable and resizable) with a thumbnail of every drawing in History, newest first. Clicking
 //! one opens it as a new drawing (undo brings the current one back). Thumbnails are loaded by the
 //! worker as their rows scroll into view.
 
@@ -8,8 +8,9 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec
 use super::DeerawApp;
 use crate::history_store::Entry;
 use crate::paint::paint_checkerboard;
-use crate::widgets::dialog;
+use crate::widgets::movable_dialog;
 
+/// Columns the window starts with; resizing it fits as many as there's room for.
 const COLUMNS: usize = 4;
 /// The box a thumbnail is fitted into (thumbnails are at most 256px, so they're only scaled down).
 const THUMBNAIL_BOX: Vec2 = Vec2::new(176.0, 132.0);
@@ -18,8 +19,8 @@ const TILE_PADDING: f32 = 8.0;
 /// Below the thumbnail: the time and the size, each a line.
 const TEXT_HEIGHT: f32 = 38.0;
 const TILE_GAP: f32 = 8.0;
-/// The window scrolls past this many points of tiles.
-const MAX_HEIGHT: f32 = 480.0;
+/// The window's starting height, which it scrolls past.
+const HEIGHT: f32 = 480.0;
 
 impl DeerawApp {
     pub(super) fn gallery_window(&mut self, ctx: &egui::Context) {
@@ -34,8 +35,8 @@ impl DeerawApp {
         let mut clicked = None;
         // Entries whose thumbnail isn't loaded (or is of an older save), with the save it should be of.
         let mut wanted = vec![];
-        dialog(ctx, "History", &mut open, |ui| {
-            ui.set_width(COLUMNS as f32 * tile.x + (COLUMNS - 1) as f32 * TILE_GAP);
+        let size = Vec2::new(COLUMNS as f32 * (tile.x + TILE_GAP) - TILE_GAP, HEIGHT);
+        movable_dialog(ctx, "History", &mut open, size, |ui| {
             if let Some(err) = &backup.error {
                 ui.colored_label(ui.visuals().error_fg_color, err);
             }
@@ -47,11 +48,12 @@ impl DeerawApp {
                 return;
             }
             ui.spacing_mut().item_spacing = Vec2::splat(TILE_GAP);
-            let rows = backup.entries.len().div_ceil(COLUMNS);
-            egui::ScrollArea::vertical().max_height(MAX_HEIGHT).auto_shrink([false, true]).show_rows(ui, tile.y, rows, |ui, rows| {
+            let columns = (((ui.available_width() + TILE_GAP) / (tile.x + TILE_GAP)) as usize).max(1);
+            let rows = backup.entries.len().div_ceil(columns);
+            egui::ScrollArea::vertical().auto_shrink(false).show_rows(ui, tile.y, rows, |ui, rows| {
                 for row in rows {
                     ui.horizontal(|ui| {
-                        for entry in backup.entries.iter().skip(row * COLUMNS).take(COLUMNS) {
+                        for entry in backup.entries.iter().skip(row * columns).take(columns) {
                             let thumbnail = backup.thumbnails.get(&entry.id);
                             if thumbnail.is_none_or(|(updated, _)| *updated < entry.updated) {
                                 wanted.push((entry.id, entry.updated));

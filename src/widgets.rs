@@ -14,20 +14,34 @@ pub const DIALOG_MARGIN: f32 = 16.0;
 /// Preferences, updates): the same margins, row spacing and button size. Closed by its × (`open`). Kept on
 /// top of the toolbar and style panel (`Order::Foreground` areas), even after they're clicked.
 pub fn dialog(ctx: &egui::Context, title: &str, open: &mut bool, content: impl FnOnce(&mut egui::Ui)) {
+    let window = dialog_window(ctx, title, open).resizable(false).anchor(Align2::CENTER_CENTER, Vec2::ZERO);
+    show_dialog(ctx, window, content);
+}
+
+/// A dialog that can be moved and resized, starting centered at `default_size` (its content's size).
+pub fn movable_dialog(ctx: &egui::Context, title: &str, open: &mut bool, default_size: Vec2, content: impl FnOnce(&mut egui::Ui)) {
+    let window = dialog_window(ctx, title, open)
+        .resizable(true)
+        .default_rect(egui::Rect::from_center_size(ctx.content_rect().center(), default_size));
+    show_dialog(ctx, window, content);
+}
+
+fn dialog_window<'a>(ctx: &egui::Context, title: &str, open: &'a mut bool) -> egui::Window<'a> {
     let style = ctx.global_style();
-    let shown = egui::Window::new(title)
+    egui::Window::new(title)
         .order(egui::Order::Foreground)
         .open(open)
         .collapsible(false)
-        .resizable(false)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
         .title_frame(egui::Frame::window(&style))
         .frame(egui::Frame::window(&style).inner_margin(DIALOG_MARGIN))
-        .show(ctx, |ui| {
-            ui.spacing_mut().item_spacing.y = 8.0;
-            ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
-            content(ui);
-        });
+}
+
+fn show_dialog(ctx: &egui::Context, window: egui::Window, content: impl FnOnce(&mut egui::Ui)) {
+    let shown = window.show(ctx, |ui| {
+        ui.spacing_mut().item_spacing.y = 8.0;
+        ui.spacing_mut().button_padding = Vec2::new(10.0, 5.0);
+        content(ui);
+    });
     if let Some(shown) = shown {
         ctx.move_to_top(shown.response.layer_id);
     }

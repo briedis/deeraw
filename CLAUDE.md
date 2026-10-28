@@ -297,7 +297,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     aren't saved. Saves render through `export_step` (`ExportTarget::History`, queued in `Backup::exports`, so they don't
     clash with Copy), then a thread (`Worker`) encodes the PNG and thumbnail and writes; it maps the app's drawing
     numbers to entry ids and sends back the list of entries (`Reply::Entries`) after each save. File > History… opens a
-    gallery window (`app/gallery.rs`, `show_history`): 4 columns of tiles, newest saved first, each the thumbnail
+    gallery window (`app/gallery.rs`, `show_history`; movable and resizable, starting centered with 4 columns; it fits
+    as many columns as its width allows): tiles newest saved first, each the thumbnail
     (fitted, never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3,
     18:20", the year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
     asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save they're of,
@@ -347,7 +348,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   of a frame.
 - eframe 0.37 API notes: the `App` method is `fn ui(&mut self, ui: &mut egui::Ui, frame)` (not
   `update`); panels take `.show(ui, ...)`; `Id::new` is deprecated in favour of `Id::unique`.
-- Dialogs (About, Changelog, Preferences, update) go through `dialog` in widgets.rs, so they share margins, spacing and
+- Dialogs (About, Changelog, Preferences, update) go through `dialog` in widgets.rs (fixed, centered; History uses
+  `movable_dialog`, the same look but movable and resizable), so they share margins, spacing and
   button size (the title bar keeps egui's default margin; `Window` pads it with the frame's margin otherwise). Menus
   get roomier spacing from `menu_style` in menu.rs.
 - An `Area` with a pivot other than LEFT_TOP is placed using last frame's size, so it's misplaced for a frame when its content resizes; `redo_frame_if_resized` (panels.rs) discards that frame (`ctx.request_discard`).
