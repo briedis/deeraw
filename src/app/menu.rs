@@ -20,10 +20,16 @@ impl DeerawApp {
             #[cfg(not(target_arch = "wasm32"))]
             ui.menu_button("File", |ui| {
                 ui.set_min_width(MENU_MIN_WIDTH);
+                // Saved to History first, and undo brings it back, so it isn't asked about.
+                if menu_item(ui, "New drawing", command(Key::N), has_objects) {
+                    self.new_drawing();
+                }
                 if menu_item(ui, "Open image…", command(Key::O), true) {
                     self.open_file();
                 }
-                self.history_menu(ui);
+                if menu_item(ui, "History…", None, true) {
+                    self.show_history = true;
+                }
                 if menu_item(ui, "Save as…", command(Key::S), has_objects) {
                     self.save_as();
                 }

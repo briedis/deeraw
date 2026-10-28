@@ -15,8 +15,6 @@ use crate::export::encode_png;
 
 /// Longest side of a thumbnail, in pixels.
 const THUMBNAIL_SIDE: usize = 256;
-/// How many entries File > History lists.
-pub const RECENT_COUNT: usize = 20;
 /// How long a write waits for another Deeraw that's writing to the same database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -90,11 +88,11 @@ impl Store {
         )
     }
 
-    /// The `count` most recently saved entries, newest first.
-    pub fn recent(&self, count: usize) -> rusqlite::Result<Vec<Entry>> {
-        let mut query = self.conn.prepare("SELECT id, updated, width, height FROM entry ORDER BY updated DESC, id DESC LIMIT ?1")?;
+    /// Every entry, the most recently saved first.
+    pub fn entries(&self) -> rusqlite::Result<Vec<Entry>> {
+        let mut query = self.conn.prepare("SELECT id, updated, width, height FROM entry ORDER BY updated DESC, id DESC")?;
         query
-            .query_map([count as i64], |row| {
+            .query_map([], |row| {
                 Ok(Entry { id: row.get(0)?, updated: row.get(1)?, size: [row.get::<_, i64>(2)? as usize, row.get::<_, i64>(3)? as usize] })
             })?
             .collect()
@@ -104,9 +102,11 @@ impl Store {
         self.conn.query_row("SELECT png FROM entry WHERE id = ?1", [id], |row| row.get(0)).optional()
     }
 
-    #[cfg(test)]
-    fn thumbnail(&self, id: i64) -> rusqlite::Result<Vec<u8>> {
-        self.conn.query_row("SELECT thumbnail FROM entry WHERE id = ?1", [id], |row| row.get(0))
+    /// Entry `id`'s thumbnail, and when it was saved (`Entry::updated`).
+    pub fn thumbnail(&self, id: i64) -> rusqlite::Result<Option<(i64, Vec<u8>)>> {
+        self.conn
+            .query_row("SELECT updated, thumbnail FROM entry WHERE id = ?1", [id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .optional()
     }
 }
 
@@ -131,12 +131,15 @@ enum Job {
     /// Saves drawing number `drawing` (the app's count, see `Worker::save`).
     Save { drawing: u64, image: ColorImage, now: i64 },
     Load(i64),
+    Thumbnail(i64),
 }
 
 pub enum Reply {
-    /// The newest entries, after opening the database and after every save.
-    Recent(Vec<Entry>),
+    /// Every entry, newest first, after opening the database and after every save.
+    Entries(Vec<Entry>),
     Loaded(ColorImage),
+    /// Entry `id`'s thumbnail as of `updated`.
+    Thumbnail { id: i64, updated: i64, image: ColorImage },
     Failed(String),
 }
 
@@ -163,8 +166,8 @@ impl Worker {
                 Ok(store) => store,
                 Err(err) => return reply(Reply::Failed(format!("Couldn't open {}: {err}", path.display()))),
             };
-            let listed = store.prune(keep).and_then(|_| store.recent(RECENT_COUNT));
-            reply(listed.map_or_else(|e| Reply::Failed(e.to_string()), Reply::Recent));
+            let listed = store.prune(keep).and_then(|_| store.entries());
+            reply(listed.map_or_else(|e| Reply::Failed(e.to_string()), Reply::Entries));
             // Each drawing's entry, once it has one.
             let mut entries: HashMap<u64, i64> = HashMap::new();
             for job in job_rx {
@@ -178,9 +181,9 @@ impl Worker {
                             })
                             .and_then(|id| {
                                 entries.insert(drawing, id);
-                                store.recent(RECENT_COUNT).map_err(|e| e.to_string())
+                                store.entries().map_err(|e| e.to_string())
                             });
-                        reply(saved.map_or_else(|e| Reply::Failed(format!("Couldn't save to history: {e}")), Reply::Recent));
+                        reply(saved.map_or_else(|e| Reply::Failed(format!("Couldn't save to history: {e}")), Reply::Entries));
                     }
                     Job::Load(id) => {
                         let loaded = match store.png(id) {
@@ -190,6 +193,15 @@ impl Worker {
                         };
                         reply(loaded.map_or_else(|e| Reply::Failed(format!("Couldn't open from history: {e}")), Reply::Loaded));
                     }
+                    Job::Thumbnail(id) => match store.thumbnail(id) {
+                        Ok(Some((updated, png))) => match decode_png(&png) {
+                            Ok(image) => reply(Reply::Thumbnail { id, updated, image }),
+                            Err(err) => reply(Reply::Failed(format!("Couldn't show a thumbnail: {err}"))),
+                        },
+                        // Deleted meanwhile; the next list leaves it out.
+                        Ok(None) => {}
+                        Err(err) => reply(Reply::Failed(format!("Couldn't show a thumbnail: {err}"))),
+                    },
                 }
             }
         });
@@ -205,6 +217,11 @@ impl Worker {
     /// Loads entry `id`; it arrives as `Reply::Loaded`.
     pub fn load(&self, id: i64) {
         self.send(Job::Load(id));
+    }
+
+    /// Loads entry `id`'s thumbnail; it arrives as `Reply::Thumbnail`.
+    pub fn thumbnail(&self, id: i64) {
+        self.send(Job::Thumbnail(id));
     }
 
     fn send(&self, job: Job) {
@@ -246,17 +263,18 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(store.save(Some(a), 3000, [50, 60], b"t3", b"p3").unwrap(), a);
         assert_eq!(
-            store.recent(10).unwrap(),
+            store.entries().unwrap(),
             vec![Entry { id: a, updated: 3000, size: [50, 60] }, Entry { id: b, updated: 2000, size: [30, 40] }]
         );
         assert_eq!(store.png(a).unwrap().as_deref(), Some(&b"p3"[..]));
-        assert_eq!(store.thumbnail(a).unwrap(), b"t3");
+        assert_eq!(store.thumbnail(a).unwrap(), Some((3000, b"t3".to_vec())));
+        assert_eq!(store.thumbnail(b + 100).unwrap(), None);
         assert_eq!(store.png(b + 100).unwrap(), None);
         // An entry deleted meanwhile is added again.
         store.conn.execute("DELETE FROM entry WHERE id = ?1", [b]).unwrap();
         let c = store.save(Some(b), 4000, [1, 1], b"t", b"p").unwrap();
-        assert_eq!(store.recent(10).unwrap().len(), 2);
-        assert_eq!(store.recent(1).unwrap()[0].id, c);
+        assert_eq!(store.entries().unwrap().len(), 2);
+        assert_eq!(store.entries().unwrap()[0].id, c);
     }
 
     #[test]
@@ -267,7 +285,7 @@ mod tests {
         store.save(Some(ids[0]), 10, [1, 1], b"t", b"p").unwrap();
         assert_eq!(store.prune(10).unwrap(), 0);
         assert_eq!(store.prune(3).unwrap(), 2);
-        let kept: Vec<i64> = store.recent(10).unwrap().iter().map(|e| e.id).collect();
+        let kept: Vec<i64> = store.entries().unwrap().iter().map(|e| e.id).collect();
         assert_eq!(kept, [ids[0], ids[4], ids[3]]);
         assert_eq!(store.png(ids[1]).unwrap(), None);
     }
@@ -296,9 +314,9 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let next = |worker: &Worker| worker.replies.recv_timeout(Duration::from_secs(10)).expect("a reply");
         let recent = |reply| match reply {
-            Reply::Recent(entries) => entries,
+            Reply::Entries(entries) => entries,
             Reply::Failed(err) => panic!("{err}"),
-            Reply::Loaded(_) => panic!("unexpected image"),
+            _ => panic!("unexpected image"),
         };
 
         let mut worker = Worker::start(path.clone(), 10, egui::Context::default());
@@ -322,6 +340,14 @@ mod tests {
         match next(&worker) {
             Reply::Loaded(image) => assert_eq!(image, pattern([80, 60])),
             _ => panic!("expected the image"),
+        }
+        worker.thumbnail(first[0].id);
+        match next(&worker) {
+            Reply::Thumbnail { id, updated, image } => {
+                assert_eq!((id, updated), (first[0].id, reopened[1].updated));
+                assert_eq!(image, thumbnail(&pattern([80, 60])));
+            }
+            _ => panic!("expected the thumbnail"),
         }
         worker.load(-1);
         assert!(matches!(next(&worker), Reply::Failed(_)));

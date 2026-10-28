@@ -6,6 +6,8 @@ mod backup;
 mod blur;
 mod canvas;
 mod files;
+#[cfg(not(target_arch = "wasm32"))]
+mod gallery;
 mod intro;
 mod menu;
 mod panels;
@@ -217,6 +219,9 @@ pub struct DeerawApp {
     whats_new_since: Option<String>,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     show_preferences: bool,
+    /// The History window (`gallery.rs`).
+    #[cfg(not(target_arch = "wasm32"))]
+    show_history: bool,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     preferences: Preferences,
     /// The launch update check was started.
@@ -369,6 +374,8 @@ impl eframe::App for DeerawApp {
         self.changelog_window(ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
         self.preferences_window(ui.ctx());
+        #[cfg(not(target_arch = "wasm32"))]
+        self.gallery_window(ui.ctx());
         #[cfg(not(target_arch = "wasm32"))]
         {
             if !std::mem::replace(&mut self.update_started, true) {
@@ -526,7 +533,7 @@ impl DeerawApp {
     /// About, Changelog, Preferences or the update window is shown.
     pub(super) fn window_open(&self) -> bool {
         #[cfg(not(target_arch = "wasm32"))]
-        if self.show_preferences || self.update_window.is_some() {
+        if self.show_preferences || self.show_history || self.update_window.is_some() {
             return true;
         }
         self.show_about || self.show_changelog

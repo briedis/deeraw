@@ -1,4 +1,5 @@
-//! File > History: when the drawing is saved there (`history_store`), and opening it again.
+//! History: when the drawing is saved there (`history_store`), and the worker's replies. The
+//! gallery that opens entries again is `gallery.rs`.
 //!
 //! Each drawing gets one entry, which its later saves replace: a drawing starts at launch, when
 //! the launcher's screenshot replaces it (`new_drawing`) and when an entry is opened. It's saved
@@ -6,6 +7,7 @@
 //! An empty drawing isn't saved, so its entry keeps what it last had. Only the newest
 //! `Preferences::history_size` entries are kept: the rest are deleted when Deeraw opens.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use eframe::egui;
@@ -15,7 +17,6 @@ use crate::export::{Export, ExportTarget};
 use crate::history_store::{Entry, Reply, Worker};
 use crate::object::Object;
 use crate::style::Background;
-use crate::widgets::menu_item;
 
 /// How long after a change the drawing is saved, in seconds.
 const AUTOSAVE_DELAY: f64 = 3.0;
@@ -23,7 +24,7 @@ const AUTOSAVE_DELAY: f64 = 3.0;
 #[derive(Default)]
 pub(super) struct Backup {
     /// Started on the first frame, which has the context it wakes for replies.
-    worker: Option<Worker>,
+    pub(super) worker: Option<Worker>,
     /// The current drawing's number; the worker keeps which entry each one has.
     drawing: u64,
     /// The current drawing as last saved (or as it started), so only changes are saved.
@@ -36,10 +37,13 @@ pub(super) struct Backup {
     exports: Vec<Export>,
     /// The window was asked to close and waits for the last save to be rendered.
     closing: bool,
-    /// The newest entries, as the worker last listed them.
-    recent: Vec<Entry>,
-    /// The last thing that went wrong, shown in the History menu.
-    error: Option<String>,
+    /// Every entry, newest first, as the worker last listed them.
+    pub(super) entries: Vec<Entry>,
+    /// Thumbnails asked for by the gallery, by entry id: the `Entry::updated` each is of, and its texture
+    /// once it's loaded.
+    pub(super) thumbnails: HashMap<i64, (i64, Option<egui::TextureHandle>)>,
+    /// The last thing that went wrong, shown in the gallery.
+    pub(super) error: Option<String>,
 }
 
 impl Backup {
@@ -84,9 +88,14 @@ impl DeerawApp {
         let replies: Vec<Reply> = self.backup.worker.iter().flat_map(Worker::replies).collect();
         for reply in replies {
             match reply {
-                Reply::Recent(entries) => {
-                    self.backup.recent = entries;
+                Reply::Entries(entries) => {
+                    self.backup.thumbnails.retain(|id, _| entries.iter().any(|e| e.id == *id));
+                    self.backup.entries = entries;
                     self.backup.error = None;
+                }
+                Reply::Thumbnail { id, updated, image } => {
+                    let texture = ctx.load_texture(format!("history-{id}"), image, egui::TextureOptions::LINEAR);
+                    self.backup.thumbnails.insert(id, (updated, Some(texture)));
                 }
                 Reply::Loaded(image) => {
                     self.new_drawing();
@@ -145,36 +154,6 @@ impl DeerawApp {
             worker.finish();
         }
     }
-
-    /// File > History: the newest drawings; picking one opens it as a new drawing (undo brings the
-    /// current one back). Its changes go to a new entry, so the one opened stays as it was.
-    pub(super) fn history_menu(&mut self, ui: &mut egui::Ui) {
-        ui.menu_button("History", |ui| {
-            if let Some(err) = &self.backup.error {
-                ui.add_enabled(false, egui::Label::new(err));
-                ui.separator();
-            }
-            if self.backup.recent.is_empty() {
-                ui.add_enabled(false, egui::Label::new("No drawings yet"));
-            }
-            for entry in &self.backup.recent {
-                if menu_item(ui, &entry_label(entry), None, true)
-                    && let Some(worker) = &self.backup.worker
-                {
-                    worker.load(entry.id);
-                }
-            }
-        });
-    }
-}
-
-/// "Oct 28, 14:32 · 1280 × 720", in local time.
-fn entry_label(entry: &Entry) -> String {
-    let [w, h] = entry.size;
-    let time = chrono::DateTime::from_timestamp_millis(entry.updated)
-        .map(|t| t.with_timezone(&chrono::Local).format("%b %-d, %H:%M").to_string())
-        .unwrap_or_default();
-    format!("{time} · {w} × {h}")
 }
 
 #[cfg(test)]

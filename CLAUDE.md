@@ -248,8 +248,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
    selection of lines and text shows both a line width and a font size button; images are skipped. Arrow heads grow with the line width; an open head is one path so its point stays sharp when thick, and the line stops inside a solid head so its square end doesn't show.
 
 9. **Menu bar** — top of the window (`menu_bar`).
-   - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
-     canvas center, fitting the window if the canvas is empty), History ▸ (native; see 13), Save as… (Ctrl+S), Preferences… (Ctrl+,; see 12),
+   - File: New drawing (Ctrl+N; `new_drawing`: saves the current one to History and empties the canvas, undo brings
+     it back, so no confirmation; disabled while empty), Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
+     canvas center, fitting the window if the canvas is empty), History… (native; see 13), Save as… (Ctrl+S), Preferences… (Ctrl+,; see 12),
      Exit (Ctrl+W; works even while typing).
    - Edit: Undo, Redo, Cut, Copy, Paste, Delete, Select all, Duplicate, with shortcuts shown. Cut/Copy/Paste
      send `ViewportCommand::Request*`, so they produce the same clipboard events as the keys (and act on
@@ -295,12 +296,15 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     is cancelled until the render is handed over; `on_exit` joins the worker so the write finishes). Empty drawings
     aren't saved. Saves render through `export_step` (`ExportTarget::History`, queued in `Backup::exports`, so they don't
     clash with Copy), then a thread (`Worker`) encodes the PNG and thumbnail and writes; it maps the app's drawing
-    numbers to entry ids and sends back the newest 20 (`Reply::Recent`) after each save. File > History lists them
-    ("Oct 28, 14:32 · 1280 × 720", newest saved first); picking one loads and decodes it on the worker, then starts a
+    numbers to entry ids and sends back the list of entries (`Reply::Entries`) after each save. File > History… opens a
+    gallery window (`app/gallery.rs`, `show_history`): 4 columns of tiles, newest saved first, each the thumbnail
+    (fitted, never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3,
+    18:20", the year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
+    asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save they're of,
+    asked again once the entry is saved again). Clicking a tile loads and decodes the PNG on the worker, closes the window, then starts a
     new drawing with it, placed like an opened image (undo brings the old drawing back). Its changes become a new
     entry; the opened one stays as it was. When the worker opens the database (first frame) it deletes all but the
     newest `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
-    No gallery yet.
 
 ## Current state
 
@@ -310,7 +314,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows), `app/backup.rs` (when to save to History, its menu);
+  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows), `app/backup.rs` (when to save to History), `app/gallery.rs` (the History window);
   `history_store.rs` (History's SQLite database and its thread).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
   Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), rusqlite (native; History, SQLite bundled), png (already
