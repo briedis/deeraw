@@ -42,6 +42,8 @@ pub(super) struct Backup {
     /// Thumbnails asked for by the gallery, by entry id: the `Entry::updated` each is of, and its texture
     /// once it's loaded.
     pub(super) thumbnails: HashMap<i64, (i64, Option<egui::TextureHandle>)>,
+    /// The entry whose tile in the gallery asks whether to delete it.
+    pub(super) confirm_delete: Option<i64>,
     /// The last thing that went wrong, shown in the gallery.
     pub(super) error: Option<String>,
 }

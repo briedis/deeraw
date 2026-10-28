@@ -9,6 +9,7 @@ What changed in each release. Ctrl means Cmd on macOS.
 - File > History…: your last 20 drawings as thumbnails, saved automatically as you work and when Deeraw closes,
   to open again. Opening one starts a new drawing with it (undo brings back the one you had). File > Preferences turns it off,
   or sets how many drawings it keeps (20 by default); older ones are deleted when Deeraw opens.
+- Delete drawings from History: hover one for its delete button, or right-click it.
 - File > New drawing (Ctrl+N) starts over; the current drawing is kept in History, and undo brings it back.
 
 ## 0.9.0 (2026-10-27)

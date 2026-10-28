@@ -22,7 +22,7 @@ pub fn dialog(ctx: &egui::Context, title: &str, open: &mut bool, content: impl F
 pub fn movable_dialog(ctx: &egui::Context, title: &str, open: &mut bool, default_size: Vec2, content: impl FnOnce(&mut egui::Ui)) {
     let window = dialog_window(ctx, title, open)
         .resizable(true)
-        .default_rect(egui::Rect::from_center_size(ctx.content_rect().center(), default_size));
+        .default_rect(egui::Rect::from_center_size(ctx.content_rect().center(), default_size + Vec2::splat(2.0 * DIALOG_MARGIN)));
     show_dialog(ctx, window, content);
 }
 
@@ -282,6 +282,8 @@ pub enum Icon {
     AlignTop,
     AlignMiddle,
     AlignBottom,
+    /// A bin with a lid.
+    Trash,
 }
 
 /// The icon set's stroke width, on its 32×32 grid.
@@ -334,6 +336,13 @@ impl Icon {
                 (&[[11.0, 28.0], [4.0, 28.0], [4.0, 21.0]], false, W),
                 (&[[16.0, 11.0], [16.0, 21.0]], false, W),
                 (&[[11.0, 16.0], [21.0, 16.0]], false, W),
+            ],
+            Icon::Trash => &[
+                (&[[5.0, 8.0], [27.0, 8.0]], false, W),
+                (&[[12.0, 8.0], [12.0, 4.5], [20.0, 4.5], [20.0, 8.0]], false, W),
+                (&[[8.0, 8.0], [9.5, 27.5], [22.5, 27.5], [24.0, 8.0]], false, W),
+                (&[[13.5, 13.0], [13.5, 22.5]], false, W),
+                (&[[18.5, 13.0], [18.5, 22.5]], false, W),
             ],
             Icon::Undo => &[
                 (&[[10.0, 8.0], [5.0, 13.0], [10.0, 18.0]], false, W),
@@ -392,19 +401,24 @@ impl Icon {
 pub fn icon_button(ui: &mut egui::Ui, selected: bool, icon: Icon, size: f32, hint: &str) -> bool {
     let button = egui::Button::selectable(selected, "").min_size(Vec2::splat(size) + Vec2::new(12.0, 8.0));
     let response = ui.add(button).on_hover_text(hint);
-    let origin = response.rect.center() - Vec2::splat(size / 2.0);
-    let scale = size / 32.0;
     let color = if selected { ui.visuals().selection.stroke.color } else { ui.visuals().text_color() };
+    paint_icon(ui.painter(), icon, response.rect.center(), size, color);
+    pressed(ui, &response)
+}
+
+/// `icon` at `size` points, centered on `center`.
+pub fn paint_icon(painter: &egui::Painter, icon: Icon, center: egui::Pos2, size: f32, color: Color32) {
+    let origin = center - Vec2::splat(size / 2.0);
+    let scale = size / 32.0;
     for &(points, closed, width) in icon.strokes() {
         let points = points.iter().map(|&[x, y]| origin + Vec2::new(x, y) * scale).collect();
         let stroke = Stroke::new(width * scale, color);
         let path = if closed { PathShape::closed_line(points, stroke) } else { PathShape::line(points, stroke) };
-        ui.painter().add(path);
+        painter.add(path);
     }
     if let Icon::Ellipse = icon {
-        ui.painter().circle_stroke(origin + Vec2::splat(size / 2.0), 11.0 * scale, Stroke::new(W * scale, color));
+        painter.circle_stroke(center, 11.0 * scale, Stroke::new(W * scale, color));
     }
-    pressed(ui, &response)
 }
 
 /// Whether `response`'s button was clicked: also when the pointer moved more than 6pt or the

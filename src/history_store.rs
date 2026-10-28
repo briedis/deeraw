@@ -88,6 +88,11 @@ impl Store {
         )
     }
 
+    pub fn delete(&self, id: i64) -> rusqlite::Result<()> {
+        self.conn.execute("DELETE FROM entry WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
     /// Every entry, the most recently saved first.
     pub fn entries(&self) -> rusqlite::Result<Vec<Entry>> {
         let mut query = self.conn.prepare("SELECT id, updated, width, height FROM entry ORDER BY updated DESC, id DESC")?;
@@ -132,6 +137,7 @@ enum Job {
     Save { drawing: u64, image: ColorImage, now: i64 },
     Load(i64),
     Thumbnail(i64),
+    Delete(i64),
 }
 
 pub enum Reply {
@@ -193,6 +199,12 @@ impl Worker {
                         };
                         reply(loaded.map_or_else(|e| Reply::Failed(format!("Couldn't open from history: {e}")), Reply::Loaded));
                     }
+                    Job::Delete(id) => {
+                        // A later save of its drawing adds a new entry.
+                        entries.retain(|_, entry| *entry != id);
+                        let listed = store.delete(id).and_then(|()| store.entries());
+                        reply(listed.map_or_else(|e| Reply::Failed(format!("Couldn't delete from history: {e}")), Reply::Entries));
+                    }
                     Job::Thumbnail(id) => match store.thumbnail(id) {
                         Ok(Some((updated, png))) => match decode_png(&png) {
                             Ok(image) => reply(Reply::Thumbnail { id, updated, image }),
@@ -222,6 +234,11 @@ impl Worker {
     /// Loads entry `id`'s thumbnail; it arrives as `Reply::Thumbnail`.
     pub fn thumbnail(&self, id: i64) {
         self.send(Job::Thumbnail(id));
+    }
+
+    /// Deletes entry `id`; the list without it arrives as `Reply::Entries`.
+    pub fn delete(&self, id: i64) {
+        self.send(Job::Delete(id));
     }
 
     fn send(&self, job: Job) {
@@ -271,7 +288,8 @@ mod tests {
         assert_eq!(store.thumbnail(b + 100).unwrap(), None);
         assert_eq!(store.png(b + 100).unwrap(), None);
         // An entry deleted meanwhile is added again.
-        store.conn.execute("DELETE FROM entry WHERE id = ?1", [b]).unwrap();
+        store.delete(b).unwrap();
+        assert_eq!(store.png(b).unwrap(), None);
         let c = store.save(Some(b), 4000, [1, 1], b"t", b"p").unwrap();
         assert_eq!(store.entries().unwrap().len(), 2);
         assert_eq!(store.entries().unwrap()[0].id, c);
@@ -356,11 +374,25 @@ mod tests {
         assert_eq!(recent(next(&worker)).len(), 3);
         worker.finish();
 
+        // Deleting a drawing's entry: its next save adds it again, and later ones replace that.
+        let mut worker = Worker::start(path.clone(), 10, egui::Context::default());
+        let before = recent(next(&worker));
+        worker.save(1, pattern([7, 7]));
+        let added = recent(next(&worker))[0].clone();
+        worker.delete(added.id);
+        assert_eq!(recent(next(&worker)), before);
+        worker.save(1, pattern([8, 8]));
+        assert_eq!(recent(next(&worker)).len(), before.len() + 1);
+        worker.save(1, pattern([9, 9]));
+        let saved = recent(next(&worker));
+        assert_eq!((saved.len(), saved[0].size), (before.len() + 1, [9, 9]));
+        worker.finish();
+
         // Opened with a smaller limit, only the newest are left.
         let mut worker = Worker::start(path.clone(), 2, egui::Context::default());
         let pruned = recent(next(&worker));
         assert_eq!(pruned.len(), 2);
-        assert_eq!(pruned[0].size, [5, 5]);
+        assert_eq!(pruned[0].size, [9, 9]);
         worker.finish();
         for suffix in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));

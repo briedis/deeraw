@@ -1,6 +1,7 @@
 //! File > History…: a window (movable and resizable) with a thumbnail of every drawing in History, newest first. Clicking
-//! one opens it as a new drawing (undo brings the current one back). Thumbnails are loaded by the
-//! worker as their rows scroll into view.
+//! one opens it as a new drawing (undo brings the current one back). Hovering one shows a delete
+//! button, which asks on the tile first (a deleted entry can't be brought back); right-clicking one
+//! offers Open and Delete. Thumbnails are loaded by the worker as their rows scroll into view.
 
 use chrono::{DateTime, Datelike, Local};
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
@@ -8,7 +9,7 @@ use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec
 use super::DeerawApp;
 use crate::history_store::Entry;
 use crate::paint::paint_checkerboard;
-use crate::widgets::movable_dialog;
+use crate::widgets::{Icon, movable_dialog, paint_icon};
 
 /// Columns the window starts with; resizing it fits as many as there's room for.
 const COLUMNS: usize = 4;
@@ -21,6 +22,17 @@ const TEXT_HEIGHT: f32 = 38.0;
 const TILE_GAP: f32 = 8.0;
 /// The window's starting height, which it scrolls past.
 const HEIGHT: f32 = 480.0;
+/// The delete button in a hovered tile's top right corner.
+const DELETE_SIZE: f32 = 28.0;
+
+/// What a tile was asked to do.
+enum TileAction {
+    Open,
+    /// Ask whether to delete it.
+    Delete,
+    ConfirmDelete,
+    CancelDelete,
+}
 
 impl DeerawApp {
     pub(super) fn gallery_window(&mut self, ctx: &egui::Context) {
@@ -32,7 +44,8 @@ impl DeerawApp {
         let backup = &self.backup;
         let saving = self.preferences.history;
         let mut open = true;
-        let mut clicked = None;
+        let mut action = None;
+        let confirming = self.backup.confirm_delete;
         // Entries whose thumbnail isn't loaded (or is of an older save), with the save it should be of.
         let mut wanted = vec![];
         let size = Vec2::new(COLUMNS as f32 * (tile.x + TILE_GAP) - TILE_GAP, HEIGHT);
@@ -60,8 +73,8 @@ impl DeerawApp {
                             }
                             // An older save's thumbnail shows until the new one is in.
                             let texture = thumbnail.and_then(|(_, texture)| texture.as_ref());
-                            if tile_ui(ui, tile, entry, texture, now).clicked() {
-                                clicked = Some(entry.id);
+                            if let Some(chosen) = tile_ui(ui, tile, entry, texture, now, confirming == Some(entry.id)) {
+                                action = Some((entry.id, chosen));
                             }
                         }
                     });
@@ -74,21 +87,42 @@ impl DeerawApp {
                 thumbnail.0 = updated;
                 worker.thumbnail(id);
             }
-            if let Some(id) = clicked {
-                worker.load(id);
-                open = false;
+            match action {
+                Some((id, TileAction::Open)) => {
+                    worker.load(id);
+                    open = false;
+                }
+                Some((id, TileAction::Delete)) => self.backup.confirm_delete = Some(id),
+                Some((id, TileAction::ConfirmDelete)) => {
+                    worker.delete(id);
+                    self.backup.confirm_delete = None;
+                }
+                Some((_, TileAction::CancelDelete)) => self.backup.confirm_delete = None,
+                None => {}
             }
         }
         self.show_history = open && !ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        if !self.show_history {
+            self.backup.confirm_delete = None;
+        }
     }
 }
 
-/// One entry: its thumbnail (on a checkerboard, for a transparent background) with its time and size below.
-fn tile_ui(ui: &mut egui::Ui, size: Vec2, entry: &Entry, texture: Option<&egui::TextureHandle>, now: DateTime<Local>) -> egui::Response {
+/// One entry: its thumbnail (on a checkerboard, for a transparent background) with its time and size below,
+/// and while hovered a delete button. While `confirming`, the thumbnail is covered by the question whether to delete it.
+fn tile_ui(
+    ui: &mut egui::Ui,
+    size: Vec2,
+    entry: &Entry,
+    texture: Option<&egui::TextureHandle>,
+    now: DateTime<Local>,
+    confirming: bool,
+) -> Option<TileAction> {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let visuals = ui.visuals();
+    let hovered = ui.rect_contains_pointer(rect);
+    let visuals = ui.visuals().clone();
     let painter = ui.painter_at(rect);
-    if response.hovered() {
+    if hovered || confirming {
         painter.rect_filled(rect, 6.0, visuals.widgets.hovered.weak_bg_fill);
     }
     let area = Rect::from_min_size(rect.min + Vec2::splat(TILE_PADDING), THUMBNAIL_BOX);
@@ -109,7 +143,50 @@ fn tile_ui(ui: &mut egui::Ui, size: Vec2, entry: &Entry, texture: Option<&egui::
     let text = Pos2::new(area.left(), area.bottom() + 6.0);
     painter.text(text, Align2::LEFT_TOP, time_label(entry.updated, now), FontId::proportional(14.0), visuals.text_color());
     painter.text(text + Vec2::new(0.0, 18.0), Align2::LEFT_TOP, format!("{w} × {h}"), FontId::proportional(12.0), visuals.weak_text_color());
-    response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open as a new drawing")
+
+    let mut action = None;
+    if confirming {
+        painter.rect_filled(area, 4.0, visuals.window_fill.gamma_multiply(0.92));
+        // Registered after the tile, so its buttons get the clicks.
+        let mut question = ui.new_child(egui::UiBuilder::new().max_rect(area).layout(egui::Layout::top_down(egui::Align::Center)));
+        question.add_space(area.height() / 2.0 - 30.0);
+        question.label("Delete this drawing?");
+        question.horizontal(|ui| {
+            let buttons = 2.0 * 64.0 + ui.spacing().item_spacing.x;
+            ui.add_space((area.width() - buttons) / 2.0);
+            let delete = egui::Button::new(egui::RichText::new("Delete").color(Color32::WHITE)).fill(visuals.error_fg_color).min_size(Vec2::new(64.0, 0.0));
+            if ui.add(delete).clicked() {
+                action = Some(TileAction::ConfirmDelete);
+            }
+            if ui.add(egui::Button::new("Cancel").min_size(Vec2::new(64.0, 0.0))).clicked() {
+                action = Some(TileAction::CancelDelete);
+            }
+        });
+        return action;
+    }
+    if hovered {
+        let button = Rect::from_min_size(Pos2::new(rect.right() - 4.0 - DELETE_SIZE, rect.top() + 4.0), Vec2::splat(DELETE_SIZE));
+        let delete = ui.interact(button, response.id.with("delete"), Sense::click());
+        let color = if delete.hovered() { visuals.error_fg_color } else { visuals.text_color() };
+        painter.circle(button.center(), DELETE_SIZE / 2.0, visuals.window_fill, visuals.widgets.noninteractive.bg_stroke);
+        paint_icon(&painter, Icon::Trash, button.center(), 16.0, color);
+        if delete.on_hover_text("Delete from History").clicked() {
+            action = Some(TileAction::Delete);
+        }
+    }
+    response.context_menu(|ui| {
+        if ui.button("Open").clicked() {
+            action = Some(TileAction::Open);
+        }
+        if ui.button("Delete…").clicked() {
+            action = Some(TileAction::Delete);
+        }
+    });
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text("Open as a new drawing");
+    if response.clicked() && action.is_none() {
+        action = Some(TileAction::Open);
+    }
+    action
 }
 
 /// When `updated` (Unix milliseconds) was, in local time: "Today 14:32", "Yesterday 09:05", "Oct 3, 18:20",

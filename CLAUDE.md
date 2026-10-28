@@ -303,7 +303,11 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     18:20", the year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
     asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save they're of,
     asked again once the entry is saved again). Clicking a tile loads and decodes the PNG on the worker, closes the window, then starts a
-    new drawing with it, placed like an opened image (undo brings the old drawing back). Its changes become a new
+    new drawing with it, placed like an opened image (undo brings the old drawing back). Deleting: a hovered tile shows
+    a trash button (`Icon::Trash`, `paint_icon`) in its corner, and right-click offers Open and Delete…; either makes the
+    tile ask "Delete this drawing?" over its thumbnail (`Backup::confirm_delete`; in-app, since rfd's custom button
+    labels need common-controls-v6 on Windows), and Delete removes it for good (`Worker::delete`, which also forgets its
+    drawing's entry, so that drawing's next save adds a new one). Its changes become a new
     entry; the opened one stays as it was. When the worker opens the database (first frame) it deletes all but the
     newest `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
 
