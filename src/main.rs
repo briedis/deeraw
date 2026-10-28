@@ -6,6 +6,8 @@ mod cursor;
 mod export;
 mod geometry;
 mod history;
+#[cfg(not(target_arch = "wasm32"))]
+mod history_store;
 mod markdown;
 mod mosaic;
 mod object;

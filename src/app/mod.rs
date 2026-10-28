@@ -1,6 +1,8 @@
 //! The app: its state, the frame layout, and operations on the objects.
 
 mod arrange;
+#[cfg(not(target_arch = "wasm32"))]
+mod backup;
 mod blur;
 mod canvas;
 mod files;
@@ -171,6 +173,9 @@ pub struct DeerawApp {
     fit_size: Option<Vec2>,
     /// Copy, Cut or Save as was requested; see `export_step`.
     export: Option<Export>,
+    /// File > History; see `backup.rs`.
+    #[cfg(not(target_arch = "wasm32"))]
+    backup: backup::Backup,
     /// Folder of the last opened or saved file, where the next file dialog opens.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     save_dir: Option<PathBuf>,
@@ -301,6 +306,11 @@ impl eframe::App for DeerawApp {
         eframe::set_value(storage, SETTINGS_KEY, &self.settings());
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn on_exit(&mut self) {
+        self.backup_exit();
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         markdown::set_enabled(self.preferences.markdown);
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::L)) {
@@ -364,8 +374,10 @@ impl eframe::App for DeerawApp {
         }
 
         if let Some(export) = self.export.take() {
-            self.export_step(ui.ctx(), frame, export);
+            self.export = self.export_step(ui.ctx(), frame, export);
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        self.backup_frame(ui.ctx(), frame);
     }
 }
 
@@ -521,9 +533,10 @@ impl DeerawApp {
         self.selected = self.objects.iter().map(|o| o.id).collect();
     }
 
-    /// Empties the canvas for a new drawing; undo brings the old one back.
-    #[cfg(any(target_os = "macos", windows))]
+    /// Empties the canvas for a new drawing (after saving the old one to History); undo brings the old one back.
+    #[cfg(not(target_arch = "wasm32"))]
     fn new_drawing(&mut self) {
+        self.backup_new_drawing();
         self.objects.clear();
         self.selected.clear();
         self.tool = Tool::Select;

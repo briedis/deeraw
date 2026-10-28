@@ -23,6 +23,7 @@ impl DeerawApp {
                 if menu_item(ui, "Open image…", command(Key::O), true) {
                     self.open_file();
                 }
+                self.history_menu(ui);
                 if menu_item(ui, "Save as…", command(Key::S), has_objects) {
                     self.save_as();
                 }

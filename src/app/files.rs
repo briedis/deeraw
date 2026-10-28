@@ -175,10 +175,10 @@ impl DeerawApp {
     /// that exceeds the GPU's texture size limit), whatever the view. Text needs its glyphs in
     /// the GPU font atlas, which is only uploaded at the end of a frame, so the first step just
     /// lays everything out and the render happens a frame later. The image is trimmed to the
-    /// pixels that differ from the background.
-    pub(super) fn export_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, export: Export) {
+    /// pixels that differ from the background. Returns the export if it's not done yet.
+    pub(super) fn export_step(&mut self, ctx: &egui::Context, frame: &eframe::Frame, export: Export) -> Option<Export> {
         let (Some(bounds), Some(render_state)) = (bounds(&export.objects), frame.wgpu_render_state()) else {
-            return;
+            return None;
         };
         let region = bounds.expand(EXPORT_MARGIN);
         let max_size = render_state.device.limits().max_texture_dimension_2d as f32;
@@ -187,14 +187,13 @@ impl DeerawApp {
         let ppp = ctx.pixels_per_point();
         let shapes = export_shapes(ctx, &export.objects, region, pixel_scale / ppp, size / ppp);
         if let ExportStep::LayOut = export.step {
-            self.export = Some(Export { step: ExportStep::Render, ..export });
             ctx.request_repaint();
-            return;
+            return Some(Export { step: ExportStep::Render, ..export });
         }
         let primitives = ctx.tessellate(shapes, ppp);
         let clear = self.background.color().map_or([0.0; 4], |c| c.to_normalized_gamma_f32());
         let size = [size.x as u32, size.y as u32];
-        let Some(image) = render_offscreen(render_state, &primitives, size, ppp, clear) else { return };
+        let image = render_offscreen(render_state, &primitives, size, ppp, clear)?;
         // The corner is in the margin, so it's the background exactly as rendered.
         let image = trim(&image, image.pixels[0]);
         match export.target {
@@ -216,7 +215,10 @@ impl DeerawApp {
                         .show();
                 }
             }
+            #[cfg(not(target_arch = "wasm32"))]
+            ExportTarget::History(drawing) => self.backup.save(drawing, image),
         }
+        None
     }
 }
 

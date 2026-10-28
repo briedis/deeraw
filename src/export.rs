@@ -1,4 +1,4 @@
-//! Copy/Cut/Save: rendering objects offscreen to an image and writing PNGs.
+//! Copy/Cut/Save (and History): rendering objects offscreen to an image and writing PNGs.
 
 use std::path::{Path, PathBuf};
 
@@ -59,6 +59,9 @@ pub enum ExportTarget {
     /// Save as; the web build has no file dialog to ask for one.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     File(PathBuf),
+    /// Saving drawing number `.0` to File > History (`app/backup.rs`).
+    #[cfg(not(target_arch = "wasm32"))]
+    History(u64),
 }
 
 /// Writes `image` (premultiplied, as egui keeps it) as an RGBA PNG.

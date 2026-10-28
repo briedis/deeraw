@@ -249,7 +249,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
 
 9. **Menu bar** — top of the window (`menu_bar`).
    - File: Open image… (Ctrl+O; png/jpg/bmp/gif/webp via the `image` crate, placed like a paste at the
-     canvas center, fitting the window if the canvas is empty), Save as… (Ctrl+S), Preferences… (Ctrl+,; see 12),
+     canvas center, fitting the window if the canvas is empty), History ▸ (native; see 13), Save as… (Ctrl+S), Preferences… (Ctrl+,; see 12),
      Exit (Ctrl+W; works even while typing).
    - Edit: Undo, Redo, Cut, Copy, Paste, Delete, Select all, Duplicate, with shortcuts shown. Cut/Copy/Paste
      send `ViewportCommand::Request*`, so they produce the same clipboard events as the keys (and act on
@@ -267,7 +267,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     (`Settings` and `App::save` in `app/mod.rs`; `app.ron` in `%APPDATA%\deeraw\data`, localStorage on
     the web), as do the window size and position. Saved on exit and every 30 seconds. `#[serde(default)]`
     keeps older settings files loading as fields are added; unreadable ones are ignored. The drawing
-    isn't kept, and the app always starts with Select.
+    isn't kept (only as an image in History, see 13), and the app always starts with Select.
 11. **Update check** (native only, `app/update.rs`) — on launch a thread runs the system's `curl` (Windows 10
     1803+ and macOS have it; `CREATE_NO_WINDOW` on Windows) for `HEAD <repository>/releases/latest`, and reads the
     version from the redirect's `Location: …/releases/tag/vX.Y.Z` (no HTTP or JSON crate). If it's newer (compared
@@ -284,6 +284,18 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     on by default; Help > Check for updates… still works); "Text": Format markdown (`markdown`, on by default; off lays
     text out as typed via `markdown::set_enabled`, a global the app sets every frame, and Ctrl+B/I do nothing). Reset to defaults applies `Settings::default()`
     (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
+13. **History** (native only; `history_store.rs`, `app/backup.rs`) — drawings are kept as flattened PNGs (the Copy
+    image, trimmed) with a 256px thumbnail each in SQLite (rusqlite, `bundled`), `history.db` in the settings folder, WAL
+    mode. One entry per drawing, replaced by its later saves: a drawing starts at launch, when `new_drawing` replaces it
+    (launcher screenshot) and when an entry is opened. Saved 3s (`AUTOSAVE_DELAY`) after it changes, once the canvas is
+    settled (objects or background differ from `Backup::saved`), before `new_drawing` clears it, and on close (the close
+    is cancelled until the render is handed over; `on_exit` joins the worker so the write finishes). Empty drawings
+    aren't saved. Saves render through `export_step` (`ExportTarget::History`, queued in `Backup::exports`, so they don't
+    clash with Copy), then a thread (`Worker`) encodes the PNG and thumbnail and writes; it maps the app's drawing
+    numbers to entry ids and sends back the newest 20 (`Reply::Recent`) after each save. File > History lists them
+    ("Oct 28, 14:32 · 1280 × 720", newest saved first); picking one loads and decodes it on the worker, then starts a
+    new drawing with it, placed like an opened image (undo brings the old drawing back). Its changes become a new
+    entry; the opened one stays as it was. No gallery or deleting yet.
 
 ## Current state
 
@@ -293,12 +305,13 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   (offscreen render, PNG), `widgets.rs` (style panel/menu buttons), `cursor.rs`. `app/mod.rs` holds `DeerawApp`,
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
-  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows).
+  `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows), `app/backup.rs` (when to save to History, its menu);
+  `history_store.rs` (History's SQLite database and its thread).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
-  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), png (already
+  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), rusqlite (native; History, SQLite bundled), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
-  geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping and PNG writing.
+  geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping, PNG writing and History (saving, reopening the database, when drawings are saved).
 - App icon: `assets/deer.svg` is the source (dark variant: #242424 rounded square, white deer drawn as
   round-capped strokes). `python3 assets/make_icons.py` (ImageMagick + Pillow) renders it
   to `assets/icon.ico` (16–256px), embedded in the exe by `build.rs` (winresource, needs the Windows
