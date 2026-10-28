@@ -569,7 +569,11 @@ impl DeerawApp {
             }
             Tool::Arrow => {
                 // Either end snaps to a nearby text or image side and attaches to it; a free end
-                // snaps to nearly horizontal, vertical or 45° lines.
+                // snaps to nearly horizontal, vertical or 45° lines. A click (no drag) goes back to Select.
+                if background.clicked() {
+                    self.selected.clear();
+                    self.tool = Tool::Select;
+                }
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     let origin = background.ctx.input(|i| i.pointer.press_origin());
                     let snap = origin.and_then(|o| self.snap(o, &to_screen_pos));
@@ -590,7 +594,11 @@ impl DeerawApp {
                 }
             }
             Tool::Shape => {
-                // Drag from corner to corner; Shift makes it a square (or circle).
+                // Drag from corner to corner; Shift makes it a square (or circle). A click goes back to Select.
+                if background.clicked() {
+                    self.selected.clear();
+                    self.tool = Tool::Select;
+                }
                 if let (true, Some(p)) = (background.drag_started_by(PointerButton::Primary), pointer) {
                     let origin = background.ctx.input(|i| i.pointer.press_origin()).map_or(p, &to_canvas);
                     self.drawing = Some(Drawing::Shape(origin, p));

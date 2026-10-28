@@ -122,7 +122,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      switched between styles afterwards. While drawing, every `PointerMoved` event of the frame
      is recorded (not just the latest position), with times spread by distance (`add_stroke_points`). Hand-drawn strokes are painted as one feathered mesh
      (`paint_hand_drawn`) plus round caps and joins at sharp turns.
-   - Arrow: drag from start to end; stays in Arrow mode. Arrows are point-to-point:
+   - Arrow: drag from start to end; stays in Arrow mode (a click on empty canvas, without a drag, deselects and goes back to Select, as with Shape and Blur). Arrows are point-to-point:
      selected arrows show a round handle per endpoint (drag to move that point) and no resize box.
      They're grabbed only within 6pt of the line.
      **Snapping:** while drawing an arrow/line or dragging an endpoint, text and image objects whose
@@ -149,7 +149,7 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
      the style panel; the toolbar button shows the current one); Shift makes it a square/circle. Outline
      only by default (`fill: None`, shared with text boxes' fill); an unfilled shape is grabbed only
      near its outline (`distance_to_outline`) unless selected, so things inside it stay clickable.
-     Resizes freely; arrows attach to shapes like to text and images. Stays in Shape mode.
+     Resizes freely; arrows attach to shapes like to text and images. Stays in Shape mode; a click on empty canvas goes back to Select.
      The line width options for shapes start with **no border** (`border: false`; a struck-through circle).
      A shape always has a border or a fill (`keep_visible`, `keep_shapes_visible` for the style): turning
      the border off on an unfilled shape fills it with its color, and making a borderless shape's fill
