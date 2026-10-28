@@ -7,7 +7,8 @@ What changed in each release. Ctrl means Cmd on macOS.
 - Right-click an object for a menu to bring it to front, forward, backward or to back, duplicate or delete it.
   Also in the Edit menu, and with Ctrl+] / Ctrl+[ (one step) and Ctrl+Shift+] / Ctrl+Shift+[ (all the way).
 - File > History…: your last 20 drawings as thumbnails, saved automatically as you work and when Deeraw closes,
-  to open again. Opening one starts a new drawing with it (undo brings back the one you had). File > Preferences turns it off,
+  to open again with everything still editable: text, arrows, shapes and blurs can be changed or moved. Opening one
+  starts a new drawing with it (undo brings back the one you had). File > Preferences turns it off,
   or sets how many drawings it keeps (20 by default); older ones are deleted when Deeraw opens.
 - Delete drawings from History: hover one for its delete button, or right-click it.
 - File > New drawing (Ctrl+N) starts over; the current drawing is kept in History, and undo brings it back.

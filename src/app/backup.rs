@@ -14,7 +14,10 @@ use eframe::egui;
 
 use super::DeerawApp;
 use crate::export::{Export, ExportTarget};
-use crate::history_store::{Entry, Reply, Worker};
+use super::files::image_kind;
+use crate::drawing::SavedDrawing;
+use crate::export::bounds;
+use crate::history_store::{Entry, Loaded, Reply, Worker};
 use crate::object::Object;
 use crate::style::Background;
 
@@ -49,10 +52,10 @@ pub(super) struct Backup {
 }
 
 impl Backup {
-    /// Hands a rendered drawing to the worker.
-    pub(super) fn save(&self, drawing: u64, image: egui::ColorImage) {
+    /// Hands a drawing, rendered as `image`, to the worker.
+    pub(super) fn save(&self, drawing: u64, image: egui::ColorImage, objects: Vec<Object>, background: Background) {
         if let Some(worker) = &self.worker {
-            worker.save(drawing, image);
+            worker.save(drawing, image, objects, background);
         }
     }
 }
@@ -99,10 +102,16 @@ impl DeerawApp {
                     let texture = ctx.load_texture(format!("history-{id}"), image, egui::TextureOptions::LINEAR);
                     self.backup.thumbnails.insert(id, (updated, Some(texture)));
                 }
-                Reply::Loaded(image) => {
+                Reply::Loaded(Loaded { image, drawing }) => {
                     self.new_drawing();
-                    self.opened = Some(Arc::new(image));
-                    self.backup.opening = true;
+                    match drawing {
+                        Some((drawing, images)) => self.restore_drawing(ctx, drawing, &images),
+                        // Placed like an opened image by `canvas`.
+                        None => {
+                            self.opened = Some(Arc::new(image));
+                            self.backup.opening = true;
+                        }
+                    }
                     ctx.request_repaint();
                 }
                 Reply::Failed(err) => {
@@ -148,6 +157,30 @@ impl DeerawApp {
             self.backup.closing = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+
+    /// Puts an opened entry's objects and background on the (empty) canvas, then fits the window to them
+    /// like to an image pasted onto an empty canvas (or, if it can't be resized, centers them).
+    fn restore_drawing(&mut self, ctx: &egui::Context, drawing: SavedDrawing, images: &HashMap<String, Arc<egui::ColorImage>>) {
+        // On the empty canvas, this only switches the drawing color along with the background.
+        self.set_background(drawing.background);
+        let mut next_id = self.next_id;
+        self.objects = crate::drawing::restore(drawing, images, &mut next_id, |pixels, uv, id| image_kind(ctx, pixels, uv, id));
+        self.next_id = next_id;
+        if let Some(bounds) = bounds(&self.objects)
+            && let Some(canvas) = self.canvas_rect
+        {
+            // At the canvas origin, where `fit_window` expects it.
+            for obj in &mut self.objects {
+                obj.translate(-bounds.min.to_vec2());
+            }
+            if !self.fit_window(ctx, bounds.size(), canvas) {
+                self.zoom_level = 0;
+                self.fit_size = None;
+                self.pan = ((canvas.size() - bounds.size() * self.zoom() / ctx.pixels_per_point()) / 2.0).round();
+            }
+        }
+        self.backup.saved = (self.objects.clone(), self.background);
     }
 
     /// Waits for the last saves to be written.
@@ -202,6 +235,26 @@ mod tests {
         assert_eq!(queued(&app), [0, 0], "a change replaces the same entry");
         app.set_background(Background::Black);
         assert!(app.unsaved(), "the background is part of the image");
+    }
+
+    #[test]
+    fn an_opened_drawing_is_editable_and_not_saved_until_changed() {
+        let mut app = DeerawApp::default();
+        add(&mut app, 0.0);
+        add(&mut app, 20.0);
+        let saved = crate::drawing::save(&app.objects, Background::Black, |_| unreachable!());
+        let old_ids: Vec<u64> = app.objects.iter().map(|o| o.id).collect();
+        app.new_drawing();
+        app.restore_drawing(&egui::Context::default(), saved, &HashMap::new());
+        assert_eq!(app.objects.len(), 2);
+        assert!(app.objects.iter().all(|o| !old_ids.contains(&o.id)), "new ids");
+        assert_eq!(app.background, Background::Black);
+        assert_eq!(app.style.color, Color32::WHITE, "the drawing color follows the background");
+        assert!(!app.unsaved());
+        assert_eq!(queued(&app), [0], "only the drawing it replaced");
+        app.objects[1].translate(Vec2::X);
+        app.backup_now();
+        assert_eq!(queued(&app), [0, 1], "its changes are a new entry");
     }
 
     #[test]

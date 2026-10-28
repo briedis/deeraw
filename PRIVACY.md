@@ -11,9 +11,11 @@ device unless you save, copy or share them yourself.
 
 - **Your drawings** are written to a file when you save one (Ctrl+S) to a place you choose, and to the
   clipboard only when you copy (Ctrl+C or Ctrl+X).
-- **History** (not in the web version): as you draw, each drawing is also kept as an image, with a small
-  preview, in `history.db` in the data folder below, so File > History… can open it again. It keeps your
-  last 20 drawings, or as many as set in File > Preferences; older ones are deleted when Deeraw opens.
+- **History** (not in the web version): as you draw, each drawing is also kept in `history.db` in the data
+  folder below, so File > History… can open it again and you can keep editing it: its text, lines and shapes,
+  the images in it as they were pasted (also the parts you blurred, so a blur can be moved later), an image of
+  the whole drawing and a small preview. It keeps your last 20 drawings, or as many as set in
+  File > Preferences; older ones are deleted when Deeraw opens.
   Turning off "Save drawings to History" there stops it from saving any more.
 - **Settings**: the last used style (colors, widths, font size), the canvas background, the folder
   you last saved to and the window size are remembered between launches. They are stored in Deeraw's

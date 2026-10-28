@@ -3,6 +3,8 @@
 
 mod app;
 mod cursor;
+#[cfg(not(target_arch = "wasm32"))]
+mod drawing;
 mod export;
 mod geometry;
 mod history;

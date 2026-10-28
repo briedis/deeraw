@@ -80,10 +80,10 @@ mod tests {
         history.undo(&mut objects);
         assert_eq!(ids(&objects), [1]);
         history.undo(&mut objects);
-        assert_eq!(ids(&objects), []);
+        assert_eq!(ids(&objects), [] as [u64; 0]);
         history.undo(&mut objects); // nothing left
         assert!(!history.can_undo() && history.can_redo());
-        assert_eq!(ids(&objects), []);
+        assert_eq!(ids(&objects), [] as [u64; 0]);
         history.redo(&mut objects);
         assert_eq!(ids(&objects), [1]);
 

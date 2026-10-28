@@ -288,28 +288,41 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     still opens older entries) and, under it (greyed out while off), Keep the last N drawings (`history_size`, default 20,
     1–`MAX_HISTORY_SIZE`; see 13). Reset to defaults applies `Settings::default()`
     (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
-13. **History** (native only; `history_store.rs`, `app/backup.rs`) — drawings are kept as flattened PNGs (the Copy
-    image, trimmed) with a 256px thumbnail each in SQLite (rusqlite, `bundled`), `history.db` in the settings folder, WAL
-    mode. One entry per drawing, replaced by its later saves: a drawing starts at launch, when `new_drawing` replaces it
-    (launcher screenshot) and when an entry is opened. Saved 3s (`AUTOSAVE_DELAY`) after it changes, once the canvas is
-    settled (objects or background differ from `Backup::saved`), before `new_drawing` clears it, and on close (the close
-    is cancelled until the render is handed over; `on_exit` joins the worker so the write finishes). Empty drawings
+13. **History** (native only; `history_store.rs`, `drawing.rs`, `app/backup.rs`, `app/gallery.rs`) — drawings are kept in
+    SQLite (rusqlite, `bundled`), `history.db` in the settings folder, WAL mode. An entry holds the drawing's objects as
+    JSON (`drawing.rs`: `SavedDrawing` with a `version`, the background and `SavedObject`s; `Kind` derives serde with
+    its Image variant skipped, and `SavedKind` stores an image as a key plus `uv`, falling back untagged to `Kind` for
+    the rest), the flattened PNG (the Copy image, trimmed) and a 256px thumbnail. Images' pixels (`Pixels`, the source,
+    unblurred) are stored once in the `image` table under `image_key` (size + a hash of the pixels, computed on the
+    worker; only keys not stored yet are encoded), `entry_image` links entries to them, and unused ones are deleted with
+    every save, delete and prune (`collect_garbage`). `PRAGMA user_version`: 0 was flattened PNGs only; `Store::init`
+    migrates it to 1 (adds `drawing`, `image`, `entry_image`) in an immediate transaction; version 0 entries open flattened.
+    One entry per drawing, replaced by its later saves: a drawing starts at launch, at `new_drawing` (File > New drawing,
+    the launcher screenshot) and when an entry is opened. Saved 3s (`AUTOSAVE_DELAY`) after it changes, once the canvas
+    is settled (objects or background differ from `Backup::saved`), before `new_drawing` clears it, and on close (the
+    close is cancelled until the render is handed over; `on_exit` joins the worker so the write finishes). Empty drawings
     aren't saved. Saves render through `export_step` (`ExportTarget::History`, queued in `Backup::exports`, so they don't
-    clash with Copy), then a thread (`Worker`) encodes the PNG and thumbnail and writes; it maps the app's drawing
-    numbers to entry ids and sends back the list of entries (`Reply::Entries`) after each save. File > History… opens a
-    gallery window (`app/gallery.rs`, `show_history`; movable and resizable, starting centered with 4 columns; it fits
-    as many columns as its width allows): tiles newest saved first, each the thumbnail
-    (fitted, never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3,
-    18:20", the year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
-    asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save they're of,
-    asked again once the entry is saved again). Clicking a tile loads and decodes the PNG on the worker, closes the window, then starts a
-    new drawing with it, placed like an opened image (undo brings the old drawing back). Deleting: a hovered tile shows
-    a trash button (`Icon::Trash`, `paint_icon`) in its corner, and right-click offers Open and Delete…; either makes the
-    tile ask "Delete this drawing?" over its thumbnail (`Backup::confirm_delete`; in-app, since rfd's custom button
-    labels need common-controls-v6 on Windows), and Delete removes it for good (`Worker::delete`, which also forgets its
-    drawing's entry, so that drawing's next save adds a new one). Its changes become a new
-    entry; the opened one stays as it was. When the worker opens the database (first frame) it deletes all but the
-    newest `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
+    clash with Copy) and hand the image and the export's objects to a thread (`Worker`), which serializes, encodes and
+    writes in one transaction; it maps the app's drawing numbers to entry ids and sends back the list of entries
+    (`Reply::Entries`) after each save. When it opens the database (first frame) it deletes all but the newest
+    `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
+    File > History… opens a gallery window (`app/gallery.rs`, `show_history`; movable and resizable, starting centered
+    with 4 columns; it fits as many columns as its width allows): tiles newest saved first, each the thumbnail (fitted,
+    never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3, 18:20", the
+    year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
+    asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save
+    they're of, asked again once the entry is saved again). Clicking a tile loads it on the worker (`load_entry`: the
+    JSON and its images decoded; a drawing that can't be read or is from a newer version opens flattened), closes the
+    window and starts a new drawing (undo brings the old one back): `restore_drawing` sets the background
+    (`set_background` on the empty canvas, so the drawing color follows), restores the objects with fresh ids
+    (`drawing::restore` remaps arrows' bindings and blurs' images; an image whose pixels are missing is left out with
+    its blurs), makes textures and mosaics (`image_kind` in files.rs), moves them to the canvas origin and fits the
+    window to them like a pasted image (centered if it can't be resized). Entries without a drawing are placed like an
+    opened image. The opened entry stays as it was: changes go to a new entry. Deleting: a hovered tile shows a trash
+    button (`Icon::Trash`, `paint_icon`) in its corner, and right-click offers Open and Delete…; either makes the tile ask
+    "Delete this drawing?" over its thumbnail (`Backup::confirm_delete`; in-app, since rfd's custom button labels need
+    common-controls-v6 on Windows), and Delete removes it for good (`Worker::delete`, which also forgets its drawing's
+    entry, so that drawing's next save adds a new one).
 
 ## Current state
 
@@ -320,9 +333,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
   its state types and object operations; its `impl` continues in `app/canvas.rs` (input, tools, painting,
   text editing), `app/selection.rs` (handles, crop), `app/snap.rs` (arrow snapping/attaching), `app/blur.rs` (Blur tool), `app/panels.rs` (layers, toolbar, style panel),
   `app/menu.rs` (menu bar, About, Changelog), `app/update.rs` (update check), `app/preferences.rs` (Preferences window), `app/intro.rs` (empty-canvas intro), `app/files.rs` (paste/open, fit window, save, export) and `app/screenshot.rs` (screen capture, macOS and Windows), `app/backup.rs` (when to save to History), `app/gallery.rs` (the History window);
-  `history_store.rs` (History's SQLite database and its thread).
+  `history_store.rs` (History's SQLite database and its thread), `drawing.rs` (a drawing as History saves it, JSON).
   Constants live in the module that uses them. Methods called across `app/` files are `pub(super)`.
-  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), rusqlite (native; History, SQLite bundled), png (already
+  Tests sit in each module's `mod tests`. Dependencies: eframe 0.37, image (decodes opened files), rfd (file/message dialogs), on macOS dispatch2/objc2/objc2-app-kit/objc2-foundation/block2 (screenshot window handling, the launcher's notification; already in winit's tree), on Windows arboard/windows-sys (screenshot clipboard and window handling; already in eframe's tree), rusqlite (native; History, SQLite bundled), serde_json (native; History's drawings), png (already
   in eframe's tree; writes saves), chrono (local time for file names). Edition 2024. Dev builds optimize
   dependencies (`[profile.dev.package."*"]`), since unoptimized egui/wgpu made window dragging laggy. `cargo test` covers the
   geometry (resize, crop, zoom), stroke pressure and spline, undo/redo, selection, arrow snapping, PNG writing and History (saving, reopening the database, when drawings are saved).

@@ -39,6 +39,13 @@ fn fit_texture_limit(image: Arc<ColorImage>, max_side: usize) -> Arc<ColorImage>
     Arc::new(ColorImage::from_rgba_premultiplied([sw as usize, sh as usize], scaled.as_raw()))
 }
 
+/// An image object's kind for `image` (already within the texture limit), showing its `uv` part, as object `id`.
+pub(super) fn image_kind(ctx: &egui::Context, image: Arc<ColorImage>, uv: Rect, id: u64) -> Kind {
+    let texture = ctx.load_texture(format!("image-{id}"), (*image).clone(), egui::TextureOptions::LINEAR);
+    let mosaics = load_mosaics(ctx, &format!("mosaic-{id}"), &image, source_block(1.0));
+    Kind::Image { texture, uv, pixels: Pixels(image), mosaics }
+}
+
 impl DeerawApp {
     /// Adds an image centered on `center` (canvas pixels) and returns its id. One too big for a
     /// GPU texture is scaled down to fit, and a notice says so.
@@ -52,16 +59,11 @@ impl DeerawApp {
             let (pos, now) = ctx.input(|i| (i.pointer.hover_pos(), i.time));
             self.notice = Some(Notice { text, pos, shown_at: now });
         }
-        let texture = ctx.load_texture(
-            format!("image-{}", self.next_id),
-            (*image).clone(),
-            egui::TextureOptions::LINEAR,
-        );
-        let mosaics = load_mosaics(ctx, &format!("mosaic-{}", self.next_id), &image, source_block(1.0));
         let size = Vec2::new(image.size[0] as f32, image.size[1] as f32);
         let min = (center - size / 2.0).round();
         let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-        self.add(Rect::from_min_size(min, size), Kind::Image { texture, uv, pixels: Pixels(image), mosaics })
+        let kind = image_kind(ctx, image, uv, self.next_id);
+        self.add(Rect::from_min_size(min, size), kind)
     }
 
     /// For the first image on an empty canvas: resizes the window to show `size` (canvas pixels,
@@ -216,7 +218,7 @@ impl DeerawApp {
                 }
             }
             #[cfg(not(target_arch = "wasm32"))]
-            ExportTarget::History(drawing) => self.backup.save(drawing, image),
+            ExportTarget::History(drawing) => self.backup.save(drawing, image, export.objects, self.background),
         }
         None
     }

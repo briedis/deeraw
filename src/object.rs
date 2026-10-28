@@ -17,10 +17,12 @@ pub struct Object {
     pub kind: Kind,
 }
 
-#[derive(Clone, PartialEq)]
+/// Serialized for History (`drawing.rs`), except images, which `SavedKind` stores by reference.
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Kind {
     /// `uv` is the part of the texture that's kept (0..1); cropping only changes `uv` and `rect`.
     /// `pixels` are the texture's, kept to rebuild `mosaics` (for blurs on it) when it's resized.
+    #[serde(skip)]
     Image { texture: TextureHandle, uv: Rect, pixels: Pixels, mosaics: Mosaics },
     /// Points are normalized to `rect` (0..1), so moving/resizing only touches `rect`.
     /// `pressures` (0..1, one per point, from drawing speed) are always recorded, but only
@@ -46,6 +48,20 @@ pub enum Kind {
     /// is derived from it, so it moves, resizes and crops with the image. Only the part inside
     /// the image's kept area shows. Kept right above its image.
     Blur { image: u64, area: Rect, strength: BlurStrength },
+}
+
+/// Just the variant, for test failures.
+impl std::fmt::Debug for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Kind::Image { .. } => "Image",
+            Kind::Stroke { .. } => "Stroke",
+            Kind::Arrow { .. } => "Arrow",
+            Kind::Shape { .. } => "Shape",
+            Kind::Text { .. } => "Text",
+            Kind::Blur { .. } => "Blur",
+        })
+    }
 }
 
 /// An outline around text, arrows and lines, so they stand out on busy images.
@@ -190,7 +206,7 @@ impl Head {
 }
 
 /// A side of an object's rect.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Side {
     Left,
     Right,
@@ -212,7 +228,7 @@ impl Side {
 }
 
 /// An arrow endpoint attached to the side `side` of object `id`.
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Binding {
     pub id: u64,
     pub side: Side,
