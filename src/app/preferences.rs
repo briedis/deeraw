@@ -32,13 +32,19 @@ impl DeerawApp {
             ui.add_space(8.0);
             ui.label(egui::RichText::new("History").strong());
             ui.indent("history", |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Keep the last");
-                    ui.add(egui::DragValue::new(&mut self.preferences.history_size).range(1..=MAX_HISTORY_SIZE));
-                    ui.label("drawings");
-                })
-                .response
-                .on_hover_text("Older drawings are deleted from File > History when Deeraw opens.");
+                ui.checkbox(&mut self.preferences.history, "Save drawings to History")
+                    .on_hover_text("Each drawing is kept as an image in File > History, to open again.");
+                ui.indent("history size", |ui| {
+                    ui.add_enabled_ui(self.preferences.history, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Keep the last");
+                            ui.add(egui::DragValue::new(&mut self.preferences.history_size).range(1..=MAX_HISTORY_SIZE));
+                            ui.label("drawings");
+                        })
+                        .response
+                        .on_hover_text("Older drawings are deleted from File > History when Deeraw opens.");
+                    });
+                });
             });
             ui.add_space(8.0);
             ui.separator();

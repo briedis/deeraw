@@ -57,9 +57,10 @@ impl DeerawApp {
         !self.objects.is_empty() && (self.objects.as_slice(), self.background) != (self.backup.saved.0.as_slice(), self.backup.saved.1)
     }
 
-    /// Starts saving the current drawing if it changed (it's rendered from this moment's objects).
+    /// Starts saving the current drawing if it changed (it's rendered from this moment's objects),
+    /// unless saving to History is turned off.
     pub(super) fn backup_now(&mut self) {
-        if self.unsaved() {
+        if self.preferences.history && self.unsaved() {
             self.backup.exports.push(Export::new(self.objects.clone(), ExportTarget::History(self.backup.drawing)));
         }
         self.backup.saved = (self.objects.clone(), self.background);
@@ -220,6 +221,23 @@ mod tests {
         assert_eq!(queued(&app), [0, 0], "a change replaces the same entry");
         app.set_background(Background::Black);
         assert!(app.unsaved(), "the background is part of the image");
+    }
+
+    #[test]
+    fn nothing_is_saved_with_history_off() {
+        let mut app = DeerawApp::default();
+        app.preferences.history = false;
+        add(&mut app, 0.0);
+        app.backup_now();
+        app.new_drawing();
+        add(&mut app, 0.0);
+        app.backup_now();
+        assert_eq!(queued(&app), [] as [u64; 0]);
+        // Turned on again, the next change is saved.
+        app.preferences.history = true;
+        app.objects[0].translate(Vec2::X);
+        app.backup_now();
+        assert_eq!(queued(&app), [1]);
     }
 
     #[test]

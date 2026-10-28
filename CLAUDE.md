@@ -283,7 +283,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     but adds it to the empty canvas instead of starting a new drawing) and Check for updates (`check_for_updates`,
     on by default; Help > Check for updates… still works); "Text": Format markdown (`markdown`, on by default; off lays
     text out as typed via `markdown::set_enabled`, a global the app sets every frame, and Ctrl+B/I do nothing);
-    "History": Keep the last N drawings (`history_size`, default 20, 1–`MAX_HISTORY_SIZE`; see 13). Reset to defaults applies `Settings::default()`
+    "History": Save drawings to History (`history`, on by default; off, `backup_now` saves nothing, and File > History
+    still opens older entries) and, under it (greyed out while off), Keep the last N drawings (`history_size`, default 20,
+    1–`MAX_HISTORY_SIZE`; see 13). Reset to defaults applies `Settings::default()`
     (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
 13. **History** (native only; `history_store.rs`, `app/backup.rs`) — drawings are kept as flattened PNGs (the Copy
     image, trimmed) with a 256px thumbnail each in SQLite (rusqlite, `bundled`), `history.db` in the settings folder, WAL

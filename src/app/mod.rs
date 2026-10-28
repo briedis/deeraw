@@ -73,13 +73,15 @@ struct Preferences {
     check_for_updates: bool,
     /// Format markdown in text (`markdown::set_enabled`); off shows it as typed.
     markdown: bool,
+    /// Save drawings to History; off, File > History still opens those saved before.
+    history: bool,
     /// How many drawings History keeps; older ones are deleted when Deeraw opens.
     history_size: usize,
 }
 
 impl Default for Preferences {
     fn default() -> Self {
-        Self { screenshot_on_launch: false, check_for_updates: true, markdown: true, history_size: 20 }
+        Self { screenshot_on_launch: false, check_for_updates: true, markdown: true, history: true, history_size: 20 }
     }
 }
 
