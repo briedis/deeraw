@@ -282,7 +282,8 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     "When Deeraw opens": Take a screenshot (macOS/Windows; `screenshot_on_launch`, starts one like `--screenshot`
     but adds it to the empty canvas instead of starting a new drawing) and Check for updates (`check_for_updates`,
     on by default; Help > Check for updates… still works); "Text": Format markdown (`markdown`, on by default; off lays
-    text out as typed via `markdown::set_enabled`, a global the app sets every frame, and Ctrl+B/I do nothing). Reset to defaults applies `Settings::default()`
+    text out as typed via `markdown::set_enabled`, a global the app sets every frame, and Ctrl+B/I do nothing);
+    "History": Keep the last N drawings (`history_size`, default 20, 1–`MAX_HISTORY_SIZE`; see 13). Reset to defaults applies `Settings::default()`
     (`apply_settings`): style, background, file folder, skipped/reminded updates and these; not the window size.
 13. **History** (native only; `history_store.rs`, `app/backup.rs`) — drawings are kept as flattened PNGs (the Copy
     image, trimmed) with a 256px thumbnail each in SQLite (rusqlite, `bundled`), `history.db` in the settings folder, WAL
@@ -295,7 +296,9 @@ Keep this list up to date as features are built. "Ctrl" means Cmd on macOS (egui
     numbers to entry ids and sends back the newest 20 (`Reply::Recent`) after each save. File > History lists them
     ("Oct 28, 14:32 · 1280 × 720", newest saved first); picking one loads and decodes it on the worker, then starts a
     new drawing with it, placed like an opened image (undo brings the old drawing back). Its changes become a new
-    entry; the opened one stays as it was. No gallery or deleting yet.
+    entry; the opened one stays as it was. When the worker opens the database (first frame) it deletes all but the
+    newest `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
+    No gallery yet.
 
 ## Current state
 

@@ -3,7 +3,8 @@
 //! Each drawing gets one entry, which its later saves replace: a drawing starts at launch, when
 //! the launcher's screenshot replaces it (`new_drawing`) and when an entry is opened. It's saved
 //! `AUTOSAVE_DELAY` after it changes (once the canvas is settled), before it's replaced, and on exit.
-//! An empty drawing isn't saved, so its entry keeps what it last had.
+//! An empty drawing isn't saved, so its entry keeps what it last had. Only the newest
+//! `Preferences::history_size` entries are kept: the rest are deleted when Deeraw opens.
 
 use std::sync::Arc;
 
@@ -77,7 +78,7 @@ impl DeerawApp {
         if self.backup.worker.is_none()
             && let Some(dir) = eframe::storage_dir("Deeraw")
         {
-            self.backup.worker = Some(Worker::start(dir.join("history.db"), ctx.clone()));
+            self.backup.worker = Some(Worker::start(dir.join("history.db"), self.preferences.history_size, ctx.clone()));
         }
         let replies: Vec<Reply> = self.backup.worker.iter().flat_map(Worker::replies).collect();
         for reply in replies {

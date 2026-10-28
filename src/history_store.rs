@@ -81,6 +81,15 @@ impl Store {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// Deletes all but the `keep` most recently saved entries; returns how many went. Their space in the
+    /// file is reused by later saves (the file doesn't shrink).
+    pub fn prune(&self, keep: usize) -> rusqlite::Result<usize> {
+        self.conn.execute(
+            "DELETE FROM entry WHERE id NOT IN (SELECT id FROM entry ORDER BY updated DESC, id DESC LIMIT ?1)",
+            [keep as i64],
+        )
+    }
+
     /// The `count` most recently saved entries, newest first.
     pub fn recent(&self, count: usize) -> rusqlite::Result<Vec<Entry>> {
         let mut query = self.conn.prepare("SELECT id, updated, width, height FROM entry ORDER BY updated DESC, id DESC LIMIT ?1")?;
@@ -139,8 +148,9 @@ pub struct Worker {
 }
 
 impl Worker {
-    /// Opens (or creates) the database at `path` on a new thread; `ctx` is woken for each reply.
-    pub fn start(path: PathBuf, ctx: egui::Context) -> Self {
+    /// Opens (or creates) the database at `path` on a new thread, keeping only the newest `keep`
+    /// entries; `ctx` is woken for each reply.
+    pub fn start(path: PathBuf, keep: usize, ctx: egui::Context) -> Self {
         let (jobs, job_rx) = mpsc::channel();
         let (reply_tx, replies) = mpsc::channel();
         let thread = std::thread::spawn(move || {
@@ -153,7 +163,8 @@ impl Worker {
                 Ok(store) => store,
                 Err(err) => return reply(Reply::Failed(format!("Couldn't open {}: {err}", path.display()))),
             };
-            reply(store.recent(RECENT_COUNT).map_or_else(|e| Reply::Failed(e.to_string()), Reply::Recent));
+            let listed = store.prune(keep).and_then(|_| store.recent(RECENT_COUNT));
+            reply(listed.map_or_else(|e| Reply::Failed(e.to_string()), Reply::Recent));
             // Each drawing's entry, once it has one.
             let mut entries: HashMap<u64, i64> = HashMap::new();
             for job in job_rx {
@@ -249,6 +260,19 @@ mod tests {
     }
 
     #[test]
+    fn pruning_keeps_the_most_recently_saved() {
+        let store = Store::in_memory().unwrap();
+        let ids: Vec<i64> = (0..5).map(|i| store.save(None, i, [1, 1], b"t", b"p").unwrap()).collect();
+        // The oldest, saved again, is now the newest.
+        store.save(Some(ids[0]), 10, [1, 1], b"t", b"p").unwrap();
+        assert_eq!(store.prune(10).unwrap(), 0);
+        assert_eq!(store.prune(3).unwrap(), 2);
+        let kept: Vec<i64> = store.recent(10).unwrap().iter().map(|e| e.id).collect();
+        assert_eq!(kept, [ids[0], ids[4], ids[3]]);
+        assert_eq!(store.png(ids[1]).unwrap(), None);
+    }
+
+    #[test]
     fn thumbnails_fit_but_never_grow() {
         assert_eq!(thumbnail(&pattern([1024, 512])).size, [256, 128]);
         assert_eq!(thumbnail(&pattern([100, 3000])).size, [9, 256]);
@@ -277,7 +301,7 @@ mod tests {
             Reply::Loaded(_) => panic!("unexpected image"),
         };
 
-        let mut worker = Worker::start(path.clone(), egui::Context::default());
+        let mut worker = Worker::start(path.clone(), 10, egui::Context::default());
         assert_eq!(recent(next(&worker)), vec![]);
         worker.save(1, pattern([64, 48]));
         let first = recent(next(&worker));
@@ -291,7 +315,7 @@ mod tests {
         assert_eq!(entries[1], Entry { size: [80, 60], ..entries[1].clone() });
         worker.finish();
 
-        let mut worker = Worker::start(path.clone(), egui::Context::default());
+        let mut worker = Worker::start(path.clone(), 10, egui::Context::default());
         let reopened = recent(next(&worker));
         assert_eq!(reopened.iter().map(|e| e.id).collect::<Vec<_>>(), entries.iter().map(|e| e.id).collect::<Vec<_>>());
         worker.load(first[0].id);
@@ -304,6 +328,13 @@ mod tests {
         // A new launch numbers its drawings from the start again, but they're new entries.
         worker.save(1, pattern([5, 5]));
         assert_eq!(recent(next(&worker)).len(), 3);
+        worker.finish();
+
+        // Opened with a smaller limit, only the newest are left.
+        let mut worker = Worker::start(path.clone(), 2, egui::Context::default());
+        let pruned = recent(next(&worker));
+        assert_eq!(pruned.len(), 2);
+        assert_eq!(pruned[0].size, [5, 5]);
         worker.finish();
         for suffix in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));

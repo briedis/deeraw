@@ -5,6 +5,9 @@ use eframe::egui;
 use super::{DeerawApp, Notice, Settings};
 use crate::widgets::dialog;
 
+/// The most drawings History can be set to keep.
+const MAX_HISTORY_SIZE: usize = 1000;
+
 impl DeerawApp {
     pub(super) fn preferences_window(&mut self, ctx: &egui::Context) {
         if !self.show_preferences {
@@ -25,6 +28,17 @@ impl DeerawApp {
             ui.indent("text", |ui| {
                 ui.checkbox(&mut self.preferences.markdown, "Format markdown")
                     .on_hover_text("*bold*, _italic_, ~strikethrough~, `code`, # headings and - lists.\nOff: text shows exactly as typed.");
+            });
+            ui.add_space(8.0);
+            ui.label(egui::RichText::new("History").strong());
+            ui.indent("history", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Keep the last");
+                    ui.add(egui::DragValue::new(&mut self.preferences.history_size).range(1..=MAX_HISTORY_SIZE));
+                    ui.label("drawings");
+                })
+                .response
+                .on_hover_text("Older drawings are deleted from File > History when Deeraw opens.");
             });
             ui.add_space(8.0);
             ui.separator();
