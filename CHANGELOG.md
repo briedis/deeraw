@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.10.0 (2026-10-29)
 
 - With the Arrow, Line or Shape tool, clicking empty canvas (without dragging) goes back to Select, as Blur already did.
 - Right-click an object for a menu to bring it to front, forward, backward or to back, duplicate or delete it.
