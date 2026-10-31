@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.10.1 (2026-10-31)
 
 - macOS: the menu bar launcher runs on macOS 11 and 12 too (it needed macOS 13 before, so it never started there).
   It starts at login on macOS 13 and later; on older versions it starts with Deeraw.
