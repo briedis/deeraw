@@ -32,8 +32,9 @@ final class Launcher: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Launcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
-        // Start at login. Only takes effect for an app installed in /Applications.
-        if SMAppService.mainApp.status != .enabled {
+        // Start at login. Only takes effect for an app installed in /Applications. SMAppService is
+        // macOS 13+; on older systems the launcher runs only while Deeraw starts it.
+        if #available(macOS 13, *), SMAppService.mainApp.status != .enabled {
             try? SMAppService.mainApp.register()
         }
     }

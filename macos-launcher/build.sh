@@ -1,7 +1,8 @@
 #!/bin/sh
 # Builds "Deeraw Launcher.app" (a menu bar icon that opens the Deeraw.app it's inside) as a universal
 # binary into Deeraw.app/Contents/Library/LoginItems, so it doesn't show up in Spotlight on its own, and
-# re-signs Deeraw.app. It registers itself as a login item on first launch.
+# re-signs Deeraw.app. It registers itself as a login item on first launch (macOS 13 and later; on older
+# systems Deeraw starts it instead).
 # Usage: build.sh [Deeraw.app]   (default /Applications/Deeraw.app; its icon and version are used for the launcher)
 # Signs with the identity in $SIGN_ID (name or SHA-1 of a code signing certificate), or ad-hoc if unset.
 # The menu bar PNGs are committed; after editing menubar-deer.svg, regenerate them with
@@ -16,8 +17,8 @@ TMP=$(mktemp -d)
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-swiftc -O -target arm64-apple-macos13 main.swift -o "$TMP/arm64"
-swiftc -O -target x86_64-apple-macos13 main.swift -o "$TMP/x86_64"
+swiftc -O -target arm64-apple-macos11 main.swift -o "$TMP/arm64"
+swiftc -O -target x86_64-apple-macos11 main.swift -o "$TMP/x86_64"
 lipo -create -output "$APP/Contents/MacOS/DeerawLauncher" "$TMP/arm64" "$TMP/x86_64"
 cp menubar-deer.png menubar-deer@2x.png "$APP/Contents/Resources/"
 cp "$DEERAW/Contents/Resources/deeraw.icns" "$APP/Contents/Resources/" 2>/dev/null || true
@@ -34,7 +35,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>${VERSION}</string>
   <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSMinimumSystemVersion</key><string>11.0</string>
   <key>LSUIElement</key><true/>
 </dict>
 </plist>
