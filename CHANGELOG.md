@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.10.2 (2026-11-03)
 
 - Windows: the update check runs the system's curl by its full path, so a `curl.exe` placed next to a portable
   `deeraw.exe` can't run in its place.
