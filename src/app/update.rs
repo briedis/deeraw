@@ -151,7 +151,7 @@ fn now() -> i64 {
 
 /// The latest release's version ("0.7.0"), from the redirect of `LATEST_URL`.
 fn latest_version() -> Option<String> {
-    let mut command = std::process::Command::new("curl");
+    let mut command = std::process::Command::new(curl_path());
     let agent = concat!("Deeraw/", env!("CARGO_PKG_VERSION"));
     command.args(["--silent", "--head", "--max-time", TIMEOUT_SECONDS, "--user-agent", agent, LATEST_URL]);
     #[cfg(windows)]
@@ -163,6 +163,20 @@ fn latest_version() -> Option<String> {
     }
     let output = command.output().ok()?;
     version_from_headers(&String::from_utf8_lossy(&output.stdout))
+}
+
+/// The system's curl by its full path: on Windows a bare `curl` is looked up in the exe's own
+/// folder first, so a `curl.exe` dropped next to a portable `deeraw.exe` would run instead.
+fn curl_path() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+        std::path::Path::new(&root).join("System32").join("curl.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        "/usr/bin/curl".into()
+    }
 }
 
 /// The version in a `Location: …/releases/tag/vX.Y.Z` header.

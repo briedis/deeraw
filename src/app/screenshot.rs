@@ -114,7 +114,7 @@ mod platform {
         let path = std::env::temp_dir().join(format!("deeraw-screenshot-{}.png", std::process::id()));
         let _ = std::fs::remove_file(&path);
         // -x: no camera sound.
-        let status = Command::new("screencapture").args(["-i", "-x"]).arg(&path).status().ok()?;
+        let status = Command::new("/usr/sbin/screencapture").args(["-i", "-x"]).arg(&path).status().ok()?;
         let image = status.success().then(|| image::open(&path).ok()).flatten();
         let _ = std::fs::remove_file(&path);
         let rgba = image?.to_rgba8();

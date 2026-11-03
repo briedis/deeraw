@@ -2,6 +2,11 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Windows: the update check runs the system's curl by its full path, so a `curl.exe` placed next to a portable
+  `deeraw.exe` can't run in its place.
+
 ## 0.10.1 (2026-10-31)
 
 - macOS: the menu bar launcher runs on macOS 11 and 12 too (it needed macOS 13 before, so it never started there).
