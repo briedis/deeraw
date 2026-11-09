@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.10.4 (2026-11-09)
 
 - macOS: a screenshot from the menu bar deer stays on the current desktop, and Deeraw comes there with it,
   instead of switching to the desktop Deeraw was on.
