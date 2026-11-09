@@ -352,6 +352,8 @@ impl eframe::App for DeerawApp {
                 self.screenshot_until = (!started && ui.ctx().cumulative_frame_nr() < until).then_some(until);
                 if !started && self.screenshot_until.is_none() {
                     self.screenshot_new_drawing = false;
+                    #[cfg(target_os = "macos")]
+                    screenshot::follow_active_space(false);
                 }
                 ui.ctx().request_repaint();
             }

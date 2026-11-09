@@ -36,9 +36,13 @@
 - macOS menu bar launcher (`macos-launcher/`): a separate Swift app (`main.swift`, `LSUIElement`, no Dock icon) that
   lives inside Deeraw.app (`Contents/Library/LoginItems/Deeraw Launcher.app`, so Spotlight doesn't list it) and
   shows the deer in the menu bar; left click takes a screenshot in the Deeraw.app it's in, right click shows
-  Take Screenshot/Open Deeraw (no screenshot)/Quit. For a screenshot it opens Deeraw with `--screenshot` and also posts the
-  distributed notification `com.briedis.deeraw.screenshot`, since a running Deeraw gets no arguments from macOS
-  (`listen_for_launcher` in `app/screenshot.rs`, observed via objc2-foundation/block2). Either makes Deeraw start a
+  Take Screenshot/Open Deeraw (no screenshot)/Quit. For a screenshot it opens Deeraw with `--screenshot` if it isn't
+  running; a running Deeraw gets no arguments from macOS, so it's sent the distributed notification
+  `com.briedis.deeraw.screenshot` instead (`listen_for_launcher` in `app/screenshot.rs`, observed via
+  objc2-foundation/block2). Deeraw then sets its window to move to the active Space when activated
+  (`follow_active_space`, `MoveToActiveSpace`; turned off again once the window is back) and answers with
+  `com.briedis.deeraw.screenshot-ready`, and only then does the launcher activate it (or after a second without an
+  answer): activating it first would switch to the desktop its window is on. Either makes Deeraw start a
   screenshot once its window is key (`screenshot_until`, retried for up to `SCREENSHOT_START_FRAMES`). Once taken,
   a launcher screenshot replaces the drawing (`screenshot_new_drawing`, `new_drawing`; undo brings the old one back,
   and the capture fits the window like a paste onto an empty canvas); Escape cancels and keeps it. The toolbar's

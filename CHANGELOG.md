@@ -4,6 +4,8 @@ What changed in each release. Ctrl means Cmd on macOS.
 
 ## Unreleased
 
+- macOS: a screenshot from the menu bar deer stays on the current desktop, and Deeraw comes there with it,
+  instead of switching to the desktop Deeraw was on.
 - Windows: Screenshot no longer cancels while you drag over a display other than the one Deeraw is on.
 
 ## 0.10.3 (2026-11-04)

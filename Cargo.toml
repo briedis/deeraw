@@ -35,7 +35,7 @@ block2 = "0.6.2"
 dispatch2 = "0.3.1"
 objc2 = "0.6.3"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSApplication", "NSResponder", "NSWindow"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSDistributedNotificationCenter", "NSNotification", "NSOperation", "NSString"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "NSArray", "NSDictionary", "NSDistributedNotificationCenter", "NSEnumerator", "NSNotification", "NSOperation", "NSString"] }
 
 # The Screenshot button on Windows: Snipping Tool's area selection, read back from the clipboard;
 # both already in eframe's tree. Packaging: the update check skips Store installs.

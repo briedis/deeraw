@@ -19,7 +19,7 @@ use std::sync::mpsc;
 use super::DeerawApp;
 
 #[cfg(target_os = "macos")]
-pub(super) use platform::listen_for_launcher;
+pub(super) use platform::{follow_active_space, listen_for_launcher};
 
 impl DeerawApp {
     /// Once the selection is done (or cancelled), hands the capture to `canvas`.
@@ -51,7 +51,7 @@ mod platform {
     use dispatch2::DispatchQueue;
     use eframe::egui::{self, ColorImage};
     use objc2::MainThreadMarker;
-    use objc2_app_kit::NSApplication;
+    use objc2_app_kit::{NSApplication, NSWindowCollectionBehavior};
     use objc2_foundation::{NSDistributedNotificationCenter, NSNotification, NSOperationQueue, NSString};
 
     use super::super::DeerawApp;
@@ -59,6 +59,21 @@ mod platform {
     /// Posted by the menu bar launcher (`macos-launcher/main.swift`) to a running Deeraw, which
     /// gets no arguments from macOS.
     const SCREENSHOT_NOTIFICATION: &str = "com.briedis.deeraw.screenshot";
+    /// The answer to `SCREENSHOT_NOTIFICATION`, once the window follows the active Space: only then
+    /// does the launcher activate Deeraw, so that doesn't switch to the Space the window is on.
+    const READY_NOTIFICATION: &str = "com.briedis.deeraw.screenshot-ready";
+
+    /// Whether activating the window brings it to the active Space (desktop) instead of switching
+    /// to its own. On while a launcher screenshot starts from another Space, so the capture is of
+    /// the Space it was asked on and the window comes back there; off otherwise, as usual on macOS.
+    pub(in crate::app) fn follow_active_space(on: bool) {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        for window in NSApplication::sharedApplication(mtm).windows() {
+            let mut behavior = window.collectionBehavior();
+            behavior.set(NSWindowCollectionBehavior::MoveToActiveSpace, on);
+            window.setCollectionBehavior(behavior);
+        }
+    }
 
     /// Starts listening for the launcher's screenshot requests; the flag is set on each one.
     pub(in crate::app) fn listen_for_launcher(ctx: &egui::Context) -> Arc<AtomicBool> {
@@ -66,6 +81,13 @@ mod platform {
         let flag = requested.clone();
         let ctx = ctx.clone();
         let block = RcBlock::new(move |_: NonNull<NSNotification>| {
+            follow_active_space(true);
+            let ready = NSString::from_str(READY_NOTIFICATION);
+            // Immediately: the launcher is never the active app, which would hold it back.
+            unsafe {
+                NSDistributedNotificationCenter::defaultCenter()
+                    .postNotificationName_object_userInfo_deliverImmediately(&ready, None, None, true)
+            };
             flag.store(true, Ordering::Relaxed);
             ctx.request_repaint();
         });
@@ -100,6 +122,7 @@ mod platform {
                     if let Some(window) = NSApplication::sharedApplication(mtm).windowWithWindowNumber(number) {
                         window.makeKeyAndOrderFront(None);
                     }
+                    follow_active_space(false);
                 });
                 let _ = sender.send(image);
                 ctx.request_repaint();

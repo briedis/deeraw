@@ -9,10 +9,15 @@ let deerawURL = Bundle.main.bundleURL
     .deletingLastPathComponent().deletingLastPathComponent()
 /// Asks a running Deeraw to take a screenshot into a new drawing (`SCREENSHOT_NOTIFICATION` there).
 let screenshotNotification = Notification.Name("com.briedis.deeraw.screenshot")
+/// Deeraw's answer, once its window comes to the current desktop when activated (`READY_NOTIFICATION`).
+let readyNotification = Notification.Name("com.briedis.deeraw.screenshot-ready")
+let deerawBundleID = "com.briedis.deeraw"
 
 final class Launcher: NSObject, NSApplicationDelegate {
     var item: NSStatusItem!
     let menu = NSMenu()
+    /// A running Deeraw was asked for a screenshot and hasn't answered yet.
+    var waiting = false
 
     func applicationDidFinishLaunching(_ note: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -32,6 +37,10 @@ final class Launcher: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "Quit Launcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
+        DistributedNotificationCenter.default().addObserver(
+            forName: readyNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.activateDeeraw() }
+
         // Start at login. Only takes effect for an app installed in /Applications. SMAppService is
         // macOS 13+; on older systems the launcher runs only while Deeraw starts it.
         if #available(macOS 13, *), SMAppService.mainApp.status != .enabled {
@@ -49,12 +58,24 @@ final class Launcher: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A running Deeraw gets no arguments from macOS, so it's asked by notification; a fresh one
-    /// gets --screenshot (and misses the notification, posted before it started).
+    /// A running Deeraw gets no arguments from macOS, so it's asked by notification, and activated
+    /// once it answers: activating it first would switch to the desktop its window is on. A fresh
+    /// one gets --screenshot. An older Deeraw doesn't answer, so it's activated after a second anyway.
     @objc func screenshot() {
+        if NSRunningApplication.runningApplications(withBundleIdentifier: deerawBundleID).isEmpty {
+            open(arguments: ["--screenshot"])
+            return
+        }
+        waiting = true
         DistributedNotificationCenter.default().postNotificationName(
             screenshotNotification, object: nil, userInfo: nil, deliverImmediately: true)
-        open(arguments: ["--screenshot"])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.activateDeeraw() }
+    }
+
+    func activateDeeraw() {
+        guard waiting else { return }
+        waiting = false
+        open(arguments: [])
     }
 
     /// Starts Deeraw or brings it to the front, keeping its drawing.
