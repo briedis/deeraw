@@ -2,6 +2,10 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Windows: Screenshot no longer cancels while you drag over a display other than the one Deeraw is on.
+
 ## 0.10.3 (2026-11-04)
 
 - Windows: the update check runs the system's curl by its full path, so a `curl.exe` placed next to a portable

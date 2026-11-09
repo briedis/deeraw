@@ -9,7 +9,7 @@
 //!
 //! Windows: the window is minimized and Snipping Tool's area selection (`ms-screenclip:`, as with
 //! Win+Shift+S) is opened; it has no result but the clipboard, so the thread waits for a new image
-//! there. The selection takes the foreground while open, so once something else has it again
+//! there. The selection takes the foreground while open, so once another process has it again
 //! without a new image, it was cancelled. The window is restored from the thread through Win32,
 //! as eframe may run no frames while minimized.
 
@@ -197,6 +197,13 @@ mod platform {
         }
     }
 
+    /// The id of the process that owns a window.
+    fn process_of(window: HWND) -> u32 {
+        let mut process = 0;
+        unsafe { GetWindowThreadProcessId(window, &mut process) };
+        process
+    }
+
     /// Opens the area selection and waits for its image on the clipboard; `None` when it was
     /// cancelled, Snipping Tool didn't open, or Deeraw was brought back by hand.
     fn capture_area(window: HWND) -> Option<ColorImage> {
@@ -217,8 +224,10 @@ mod platform {
             )
         };
         let started = Instant::now();
+        // The selection's process: it has an overlay window per display, and the one you drag on
+        // takes the foreground, so the window changes while the selection is still open.
         let mut selection = None;
-        let mut closed = None;
+        let mut closed: Option<Instant> = None;
         loop {
             std::thread::sleep(POLL);
             // Several formats may be written one by one, so this retries until an image reads.
@@ -233,15 +242,15 @@ mod platform {
             }
             let foreground = unsafe { GetForegroundWindow() };
             match selection {
-                None if foreground != before && !foreground.is_null() => selection = Some(foreground),
+                None if foreground != before && !foreground.is_null() => selection = Some(process_of(foreground)),
                 None if started.elapsed() > OPEN_TIMEOUT => return None,
                 None => {}
-                Some(selection) if foreground != selection => {
+                Some(selection) if foreground.is_null() || process_of(foreground) != selection => {
                     if closed.get_or_insert_with(Instant::now).elapsed() > CLIPBOARD_WAIT {
                         return None;
                     }
                 }
-                Some(_) => {}
+                Some(_) => closed = None,
             }
         }
     }

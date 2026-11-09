@@ -12,7 +12,8 @@
    - Screenshot (Windows; same file): minimizes the window and opens Snipping Tool's area selection
      (`ms-screenclip:`, as Win+Shift+S). Its only result is the clipboard, so a thread polls
      `GetClipboardSequenceNumber` and reads the image with arboard. The selection takes the foreground while
-     open, so once another window has it again with no new image (after `CLIPBOARD_WAIT`), it was cancelled;
+     open, so once another process's window has it again with no new image (after `CLIPBOARD_WAIT`), it was cancelled
+     (by process, not window: it has an overlay per display, and the one dragged on takes the foreground);
      restoring Deeraw by hand also cancels, and so does the selection not opening within `OPEN_TIMEOUT`. The thread restores
      the window through Win32 (`bring_back`), attaching to the foreground window's input thread so
      `SetForegroundWindow` isn't refused by focus-stealing protection (without it, Deeraw came back behind).
