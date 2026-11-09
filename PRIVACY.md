@@ -2,7 +2,7 @@
 
 _Last updated: October 24, 2026_
 
-Deeraw is a drawing app that runs entirely on your device. It does not collect, send or sell any
+Deeraw is a screenshot annotation app that runs entirely on your device. It does not collect, send or sell any
 personal data. It has no accounts, analytics, telemetry, ads or tracking. The only network request
 it may make of its own is a check for a newer version (see below); your drawings never leave your
 device unless you save, copy or share them yourself.

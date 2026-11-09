@@ -1,6 +1,7 @@
 # Deeraw
 
-A desktop drawing app in Rust for Windows and macOS, inspired by Excalidraw (hand-drawn style whiteboard).
+A desktop screenshot annotation app in Rust for Windows and macOS: capture or paste an image, mark it up and blur
+sensitive parts. The look is inspired by Excalidraw (hand-drawn style whiteboard).
 
 ## Approach
 

@@ -4,7 +4,7 @@
 
 <h1 align="center">Deeraw</h1>
 
-<p align="center">An opinionated drawing app inspired by Excalidraw, written in Rust.</p>
+<p align="center">Take a screenshot or paste an image, mark it up with arrows, shapes and text, and blur out sensitive info.<br>Inspired by Excalidraw, written in Rust.</p>
 
 ## Features
 
