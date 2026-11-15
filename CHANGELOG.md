@@ -2,6 +2,12 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## 0.10.5 (2026-11-15)
+
+- File > History…: thumbnails grow with the window to fill its width, adding a column once they'd get too big.
+- File > History…: deleting a drawing no longer asks first; an Undo button above the thumbnails brings it back
+  until you delete another one or close the window.
+
 ## 0.10.4 (2026-11-09)
 
 - macOS: a screenshot from the menu bar deer stays on the current desktop, and Deeraw comes there with it,

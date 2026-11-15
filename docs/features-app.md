@@ -41,8 +41,8 @@
     (`Reply::Entries`) after each save. When it opens the database (first frame) it deletes all but the newest
     `history_size` entries (`Store::prune`, by last save); the file doesn't shrink, later saves reuse the space.
     File > History… opens a gallery window (`app/gallery.rs`, `show_history`; movable and resizable, starting centered
-    with 4 columns; it fits as many columns as its width allows): tiles newest saved first, each the thumbnail (fitted,
-    never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3, 18:20", the
+    with 4 columns; tiles stretch to fill its width, adding a column once they'd pass 256px thumbnails): tiles newest
+    saved first, each the thumbnail (fitted into a 4:3 box, never scaled up, on a checkerboard for transparency) with its time ("Today 14:32", "Yesterday", "Oct 3, 18:20", the
     year if not this one; `time_label`) and size; it scrolls (`show_rows`), and only the visible rows' thumbnails are
     asked for (`Worker::thumbnail`, decoded on the worker, kept as textures in `Backup::thumbnails` with the save
     they're of, asked again once the entry is saved again). Clicking a tile loads it on the worker (`load_entry`: the
@@ -53,8 +53,8 @@
     its blurs), makes textures and mosaics (`image_kind` in files.rs), moves them to the canvas origin and fits the
     window to them like a pasted image (centered if it can't be resized). Entries without a drawing are placed like an
     opened image. The opened entry stays as it was: changes go to a new entry. Deleting: a hovered tile shows a trash
-    button (`Icon::Trash`, `paint_icon`) in its corner, and right-click offers Open and Delete…; either makes the tile ask
-    "Delete this drawing?" over its thumbnail (`Backup::confirm_delete`; in-app, since rfd's custom button labels need
-    common-controls-v6 on Windows), and Delete removes it for good (`Worker::delete`, which also forgets its drawing's
-    entry, so that drawing's next save adds a new one).
+    button (`Icon::Trash`, `paint_icon`) in its corner, and right-click offers Open and Delete; either hides the tile at
+    once, with "Deleted the drawing from …" and an Undo button above the grid (`Backup::pending_delete`). It's deleted
+    for good (`Worker::delete`, which also forgets its drawing's entry, so that drawing's next save adds a new one)
+    when another tile is deleted, the window closes or the app exits (`backup_exit`).
 

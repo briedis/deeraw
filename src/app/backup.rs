@@ -45,8 +45,9 @@ pub(super) struct Backup {
     /// Thumbnails asked for by the gallery, by entry id: the `Entry::updated` each is of, and its texture
     /// once it's loaded.
     pub(super) thumbnails: HashMap<i64, (i64, Option<egui::TextureHandle>)>,
-    /// The entry whose tile in the gallery asks whether to delete it.
-    pub(super) confirm_delete: Option<i64>,
+    /// The entry deleted in the gallery but not yet from History: it's hidden there, with an Undo button, and
+    /// deleted for good when another is, the gallery closes or the app exits.
+    pub(super) pending_delete: Option<i64>,
     /// The last thing that went wrong, shown in the gallery.
     pub(super) error: Option<String>,
 }
@@ -185,7 +186,11 @@ impl DeerawApp {
 
     /// Waits for the last saves to be written.
     pub(super) fn backup_exit(&mut self) {
+        let pending = self.backup.pending_delete.take();
         if let Some(worker) = &mut self.backup.worker {
+            if let Some(id) = pending {
+                worker.delete(id);
+            }
             worker.finish();
         }
     }
