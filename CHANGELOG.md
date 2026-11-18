@@ -2,7 +2,7 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
-## Unreleased
+## 0.10.6 (2026-11-19)
 
 - Paste and Copy buttons in the toolbar, next to Screenshot (not in the web version).
 
