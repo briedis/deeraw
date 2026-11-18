@@ -285,7 +285,7 @@ pub enum Icon {
     /// A clipboard.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Paste,
-    /// Two overlapping sheets.
+    /// A page with a folded corner and two lines of text, over another page.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Copy,
     /// A U-turn arrow pointing left.
@@ -362,8 +362,11 @@ impl Icon {
                 (&[[11.0, 22.0], [18.0, 22.0]], false, W),
             ],
             Icon::Copy => &[
-                (&[[11.0, 21.0], [5.0, 21.0], [5.0, 5.0], [21.0, 5.0], [21.0, 11.0]], false, W),
-                (&[[11.0, 11.0], [27.0, 11.0], [27.0, 27.0], [11.0, 27.0]], true, W),
+                (&[[11.0, 3.0], [21.0, 3.0], [26.0, 8.0], [26.0, 25.0], [11.0, 25.0]], true, W),
+                (&[[21.0, 3.0], [21.0, 8.0], [26.0, 8.0]], false, W),
+                (&[[15.0, 13.5], [22.0, 13.5]], false, W),
+                (&[[15.0, 18.5], [22.0, 18.5]], false, W),
+                (&[[11.0, 7.0], [6.0, 7.0], [6.0, 29.0], [21.0, 29.0], [21.0, 25.0]], false, W),
             ],
             Icon::Trash => &[
                 (&[[5.0, 8.0], [27.0, 8.0]], false, W),
