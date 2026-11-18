@@ -282,6 +282,12 @@ pub enum Icon {
     /// Corner brackets around a crosshair.
     #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Screenshot,
+    /// A clipboard.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Paste,
+    /// Two overlapping sheets.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    Copy,
     /// A U-turn arrow pointing left.
     Undo,
     /// A U-turn arrow pointing right.
@@ -348,6 +354,16 @@ impl Icon {
                 (&[[11.0, 28.0], [4.0, 28.0], [4.0, 21.0]], false, W),
                 (&[[16.0, 11.0], [16.0, 21.0]], false, W),
                 (&[[11.0, 16.0], [21.0, 16.0]], false, W),
+            ],
+            Icon::Paste => &[
+                (&[[11.0, 6.0], [6.5, 6.0], [6.5, 28.5], [25.5, 28.5], [25.5, 6.0], [21.0, 6.0]], false, W),
+                (&[[11.0, 3.5], [21.0, 3.5], [21.0, 9.0], [11.0, 9.0]], true, W),
+                (&[[11.0, 16.0], [21.0, 16.0]], false, W),
+                (&[[11.0, 22.0], [18.0, 22.0]], false, W),
+            ],
+            Icon::Copy => &[
+                (&[[20.0, 8.5], [20.0, 4.0], [4.0, 4.0], [4.0, 20.0], [8.5, 20.0]], false, W),
+                (&[[12.0, 12.0], [28.0, 12.0], [28.0, 28.0], [12.0, 28.0]], true, W),
             ],
             Icon::Trash => &[
                 (&[[5.0, 8.0], [27.0, 8.0]], false, W),

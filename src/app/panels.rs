@@ -664,15 +664,32 @@ impl DeerawApp {
                 ui.set_visuals(canvas_ui_visuals(self.background));
                 egui::Frame::popup(ui.style()).inner_margin(6).show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        #[cfg(any(target_os = "macos", windows))]
+                        // The browser doesn't let an app read or write the clipboard on request.
+                        #[cfg(not(target_arch = "wasm32"))]
                         {
-                            let hint = if cfg!(target_os = "macos") {
-                                "Screenshot: drag over part of the screen to add it (Space picks a window, Escape cancels)"
-                            } else {
-                                "Screenshot: drag over part of the screen to add it (Escape cancels)"
-                            };
-                            if icon_button(ui, self.screenshot.is_some(), Icon::Screenshot, TOOLBAR_ICON_SIZE, hint) {
-                                self.start_screenshot(ui.ctx());
+                            #[cfg(any(target_os = "macos", windows))]
+                            {
+                                let hint = if cfg!(target_os = "macos") {
+                                    "Screenshot: drag over part of the screen to add it (Space picks a window, Escape cancels)"
+                                } else {
+                                    "Screenshot: drag over part of the screen to add it (Escape cancels)"
+                                };
+                                if icon_button(ui, self.screenshot.is_some(), Icon::Screenshot, TOOLBAR_ICON_SIZE, hint) {
+                                    self.start_screenshot(ui.ctx());
+                                }
+                            }
+                            let ctx = ui.ctx().clone();
+                            let shortcut = |key| shortcut_text(&ctx, &egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, key));
+                            let paste_hint = format!("Paste an image or text ({})", shortcut(egui::Key::V));
+                            if icon_button(ui, false, Icon::Paste, TOOLBAR_ICON_SIZE, &paste_hint) {
+                                // Like Edit > Paste: placed at the canvas center.
+                                self.menu_paste_frame = Some(ui.ctx().cumulative_frame_nr());
+                                ui.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+                            }
+                            let copy_hint = format!("Copy the drawing as an image ({})", shortcut(egui::Key::C));
+                            let has_objects = !self.objects.is_empty();
+                            if ui.add_enabled_ui(has_objects, |ui| icon_button(ui, false, Icon::Copy, TOOLBAR_ICON_SIZE, &copy_hint)).inner {
+                                ui.send_viewport_cmd(egui::ViewportCommand::RequestCopy);
                             }
                             ui.separator();
                         }

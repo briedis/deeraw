@@ -2,6 +2,10 @@
 
 What changed in each release. Ctrl means Cmd on macOS.
 
+## Unreleased
+
+- Paste and Copy buttons in the toolbar, next to Screenshot (not in the web version).
+
 ## 0.10.5 (2026-11-15)
 
 - File > History…: thumbnails grow with the window to fill its width, adding a column once they'd get too big.
