@@ -285,7 +285,7 @@ pub enum Icon {
     /// A clipboard.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Paste,
-    /// A page with a folded corner and two lines of text, over another page.
+    /// A page with a cut corner, over another page.
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Copy,
     /// A U-turn arrow pointing left.
@@ -362,11 +362,9 @@ impl Icon {
                 (&[[11.0, 22.0], [18.0, 22.0]], false, W),
             ],
             Icon::Copy => &[
-                (&[[11.0, 3.0], [21.0, 3.0], [26.0, 8.0], [26.0, 25.0], [11.0, 25.0]], true, W),
-                (&[[21.0, 3.0], [21.0, 8.0], [26.0, 8.0]], false, W),
-                (&[[15.0, 13.5], [22.0, 13.5]], false, W),
-                (&[[15.0, 18.5], [22.0, 18.5]], false, W),
-                (&[[11.0, 7.0], [6.0, 7.0], [6.0, 29.0], [21.0, 29.0], [21.0, 25.0]], false, W),
+                // On multiples of 4, so at the toolbar's 24pt the edges land on whole pixels.
+                (&[[12.0, 4.0], [21.0, 4.0], [28.0, 11.0], [28.0, 24.0], [12.0, 24.0]], true, W),
+                (&[[12.0, 8.0], [4.0, 8.0], [4.0, 28.0], [24.0, 28.0], [24.0, 24.0]], false, W),
             ],
             Icon::Trash => &[
                 (&[[5.0, 8.0], [27.0, 8.0]], false, W),
